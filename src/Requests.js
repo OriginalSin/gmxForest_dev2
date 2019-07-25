@@ -1100,7 +1100,6 @@ var geoMag = new Geomag(cof).mag;
 export {
 	chkLayer,
 	colsToHash,
-	fields,
 	getAngleDist,
 	geoMag,
 	sendExcel,
