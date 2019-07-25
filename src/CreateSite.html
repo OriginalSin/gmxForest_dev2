@@ -1,0 +1,320 @@
+<div class="pop_title">Создание групп делянок</div>
+
+<div class="site-block">
+	<div class="main_pop_cont_2">
+		<div class="scrollbar" id="style-4">
+		   <div class="pop_ro_title">
+			  <div class="pop_ro_title_left">Название группы</div>
+			  <div class="pop_ro_title_right">Обязательное</div>
+		   </div>
+		   <div class="pop_ro"><input class="inp_pop" on:change="setNodeField(this, true)" name="layerID" placeholder="Делянки" ref:layerID /></div>
+
+		   <div class="pop_ro_title"><div class="pop_ro_title_left">Квартальная сеть</div></div>
+		   <div class="pop_ro">
+				<select on:change="setNodeField(this, true)" name="quadrantLayerId" ref:quadrantLayerId class="select">
+					{#each quadrantIds as it}
+						<option value="{it.id}" selected="{quadrantLayerId === it.id}" class="{it.bad ? 'red' : ''}">{it.title}</option>
+					{/each}
+				</select>
+
+			  <span class="pop_upload" alt="pop_upload" on:click="createKvartal()" ></span>
+		   </div>
+
+		</div>
+		<div class="pop_bottom">
+		   <div class="pop_bottom_left" on:click="cancel()">Отмена</div>
+		   <div class="pop_bottom_right" on:click="create()">Создать</div>
+		</div>
+	</div>
+</div>
+
+<script>
+import * as Config from './Config.js';
+import * as Requests from './Requests.js';
+import * as EditorLib from './EditorLib.js';
+
+export default {
+	data() {
+		return {
+			quadrantIds: [],
+			quadrantLayerId: null,
+			reportType: 'об использовании лесов'
+		};
+	},
+	computed: {
+	},
+	methods: {
+		setNodeField(node, setFlag) {
+ // console.log('setNodeField', node);
+			let val = node.options ? node.options[node.selectedIndex].value : node.value,
+				name = node.name;
+			// this.setField(name, val);
+			if (setFlag) {
+				let attr = {};
+				attr[name] = val;
+				if (name === 'layerID') {
+					if (this.refs.layerID.value) {
+						this.refs.layerID.classList.remove('error');
+					} else {
+						this.refs.layerID.classList.add('error');
+					}
+				}
+				this.set(attr);
+			}
+		},
+		cancel() {
+			let {map, gmxPopup} = this.get();
+			map.removeControl(gmxPopup);
+		},
+		createKvartal() {
+			EditorLib.createLayer(true);
+		},
+		create() {
+			let {map, gmxPopup, quadrantIds, prnt} = this.get();
+
+			if (!this.refs.layerID.value) {
+				this.refs.layerID.classList.add('error');
+				return;
+			}
+
+			let qSel = this.refs.quadrantLayerId,
+				qVal = qSel.options.length ? qSel.options[qSel.selectedIndex || 0].value : '',
+				cols = Object.keys(Config.fieldsConf).map ((k) => { return { Name: k, ColumnSimpleType: Config.fieldsConf[k].ColumnSimpleType } });
+			let props = {
+				Title: this.refs.layerID.value || 'Делянки 1',
+				MetaProperties: {
+					kvartal: {Value: qVal, Type: 'String'}
+				},
+				srs: 3857,
+				Columns: cols,
+				SourceType: 'manual',
+				GeometryType: "polygon"
+			};
+			EditorLib.saveLayer(props)
+				.then(json => {
+					map.removeControl(gmxPopup);
+					setTimeout(prnt.regetLayersIds.bind(prnt, json.name), 1500);
+			});
+		}
+	}
+};
+</script>
+
+<style>
+.gmxControlPopup .content-wrapper {
+    margin: 20px 0 0 0;
+    padding: 1px;
+    text-align: left;
+    cursor: default;
+}
+
+.closeButton {
+    position: absolute;
+    font: 16px/14px Tahoma, Verdana, sans-serif;
+    font-weight: bold;
+    color: #c3c3c3;
+    top: 12px;
+    right: 12px;
+    cursor: pointer;
+}
+
+select.reportType.gmx-sidebar-select-large {
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+}
+
+input.inp_pop {
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+    padding-left: 5px;
+}
+
+select.select {
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+}
+
+
+span.pop_upload {
+    content: url(./img/upload.svg);
+	cursor: pointer;
+    left: 10px;
+    position: relative;
+}
+
+.pop_ro_title_right {
+    font-style: italic;
+    font-weight: normal;
+    font-size: 12px;
+    line-height: normal;
+    text-align: right;
+    color: #8A9BA8;
+    display: block;
+    font-family: IBM Plex Sans;
+}
+
+.pop_ro_title_left {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #8A9BA8;
+    display: block;
+    font-family: IBM Plex Sans;
+}
+
+
+.main_pop_cont_2 {
+    cursor: default;
+    overflow-y: auto;
+    display: block;
+    background: #FFFFFF;
+    border: 0px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 287px;
+    height: auto;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+
+.pop_bottom_left {
+    font-style: normal;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    color: #394B59;
+    flex-direction: row;
+    width: 50%;
+    justify-content: center;
+    align-items: center;
+    border-right: 1px solid #D8E1E8;
+    cursor: pointer;
+    font-family: IBM Plex Sans;
+    font-weight: 600;
+}
+
+.pop_bottom_right {
+    font-style: normal;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    flex-direction: row;
+    width: 50%;
+    justify-content: center;
+    align-items: center;
+    color: #318CFE;
+    cursor: pointer;
+    font-family: IBM Plex Sans;
+    font-weight: 600;
+}
+
+
+.pop_bottom {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 40px;
+    border-top: 1px solid #D8E1E8;
+    align-items: center;
+    font-family: IBM Plex Sans;
+    margin-top: 23px;
+}
+
+.gmxControlPopup {
+    position: absolute;
+    border-radius: 4px;
+    background: white;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+}
+
+.pop_title {
+    pointer-events: none;
+    position: relative;
+    top: 0px;
+    left: 0;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    color: #394B59;
+    font-family: IBM Plex Sans;
+    min-height: 30px;
+    border-bottom: 1px solid #D8E1E8;
+    padding-left: 17px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.pop_ro {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 5px 26px 5px 15px;
+}
+.pop_ro select, .pop_ro input {
+    width: 100%;
+    min-height: 30px;
+}
+.pop_ro_title {
+    display: flex;
+    justify-content: space-between;
+    /*min-height: 30px;*/
+    padding: 13px 26px 5px 15px;
+    margin-top: -5px;
+}
+</style>

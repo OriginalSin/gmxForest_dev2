@@ -1,0 +1,1426 @@
+<script>
+	import * as Config from './Config.js';
+	import * as EditorLib from './EditorLib.js';
+	import * as Requests from './Requests.js';
+
+	// import * as geoMag from './geomag.js';
+
+	const DEFANGLE = 45,
+		DEFLEG = 200,
+		PATERNS = {
+			angle: /(\d*)\.?\d*_a/,
+			dist: /(\d+)_d/
+			// ,
+			// latlng: '\d*([\.]&#123;1&#125;\d*)?'
+		};
+
+	export default {
+		data() {
+			return {
+				step: 1,
+				coordType: 0,
+				cancel: null,
+				drawings: null,
+				quadrantLayerId: null,
+				quadrantIds: null,
+				quadrantValues: null,
+				layerItems: null,
+				snap: null,
+				kvartal: null,
+				paterns: {
+					angle: '[СВЮЗ]*[ВЗ]*[\d]+([\.,][\d]+)?',			// С, СВ, В, ЮВ, Ю, ЮЗ, З, СЗ
+					latlng: '\d*([\.]&#123;1&#125;\d*)?',
+					latlngPoint: '\d+°\d+\'\d\d.\d\d" N, \d+°\d+\'\d\d.\d\d" E'
+				},
+				fieldsConf: Config.fieldsConf || {},
+				isForestCols: false,
+				reportType: 'ИЛ',
+				hashCols: {},
+				checked: {},
+				layerID: '',
+				layerIds: []
+			}
+		},
+		components: {
+		},
+
+		computed: {
+			isReqTypeReport: ({ meta }) => meta.report_t && (meta.report_t.Value === 'ВЛ' || meta.report_t.Value === 'о воспроизводстве лесов'),
+			latlng: ({ snap }) => snap && snap.latlng,
+			latlngPoint: ({ snap }) => snap && snap.latlng && L.gmxUtil.getCoordinatesString(L.latLng(snap.latlng[0], snap.latlng[1]), 1),
+			snapArr: ({ snap }) => snap && snap.snap || [[0, 0, 0]],
+			ringArr: ({ snap }) => snap && snap.ring || [[0, 0, 0]],
+			listQuadrants: ({ quadrantValues }) => quadrantValues && Object.keys(quadrantValues) || null
+		},
+
+		methods: {
+		_lastProps: {},
+			coordFormatChange(ev) {
+				const { snap, coordType } = this.get();
+				if (coordType) {
+					let latlng = snap.latLng;
+					let str = L.gmxUtil.latLonFormatCoordinates(latlng);
+				} else {
+					let latlng = snap.latLng;
+					let str = L.gmxUtil.formatCoordinates(latlng);
+console.log('coordFormatChange', ev)
+		// return  gmxAPIutils.formatDegrees(Math.abs(y)) + (y > 0 ? ' N, ' : ' S, ') +
+			// gmxAPIutils.formatDegrees(Math.abs(x)) + (x > 0 ? ' E' : ' W');
+				}
+				this.set({coordType: coordType ? 0 : 1})
+			},
+
+			parseCoordinate: function(text) {
+				if (text.match(/[йцукенгшщзхъфывапролджэячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮqrtyuiopadfghjklzxcvbmQRTYUIOPADFGHJKLZXCVBM_:]/)) {
+					return null;
+				}
+				text = text.replace(/,/g, '.');
+				let regex = /(-?\d+(\.\d+)?)([^\d\-]*)/g,
+					t = regex.exec(text),
+					results = [];
+
+				while (t) {
+					results.push(t[1]);
+					t = regex.exec(text);
+				}
+				if (!results.length) {
+					return null;
+				}
+				var ii = Math.floor(results.length),
+					y = 0,
+					mul = 1,
+					i;
+				for (i = 0; i < ii; i++) {
+					y += parseFloat(results[i]) * mul;
+					mul /= 60;
+				}
+
+				if (text.indexOf('S') !== -1 || text.indexOf('W') !== -1) {
+					y = -y;
+				}
+				return y;
+			},
+
+			onKeyUp(ev) {
+				if (ev.key === 'Enter') {
+					this.nextPoint(ev.target, true);
+				}
+			},
+			_parseAngle(str) {		// С, СВ, В, ЮВ, Ю, ЮЗ, З, СЗ
+				str = str.trim();
+				let angle = 0,
+					np = '',
+					p1 = (str[0] || '').toUpperCase(),
+					p2 = (str[1] || '').toUpperCase(),
+					d = (p2 === 'З' ? 45 : (p2 === 'В' || p2 === 'B' ? -45 : 0)),
+					fMinus = false,
+					s = 1;
+
+				if (p1 === 'C' || p1 === 'С') {
+					np = 'С';
+					if (p2 === 'З') {
+						// angle = 360;
+						s = 2;
+						np = 'СЗ';
+						fMinus = true;
+					} else if (p2 === 'В' || p2 === 'B') {
+						s = 2;
+						np = 'СВ';
+					}
+				} else if (p1 === 'Ю') {
+					np = 'Ю';
+					angle = 180;
+					if (p2 === 'З') {
+						s = 2;
+						np = 'ЮЗ';
+					} else if (p2 === 'В' || p2 === 'B') {
+						s = 2;
+						np = 'ЮВ';
+						fMinus = true;
+					}
+				} else if (p1 === 'З') {
+					np = 'З';
+					angle = 270;
+				} else if (p1 === 'В' || p1 === 'B') {
+					np = 'В';
+					angle = 90;
+				} else {
+					s = 0;
+				}
+				let rumb = Number(str.substr(s));
+				return {
+					np: np,
+					rumb: rumb,
+					angle: angle + (fMinus ? -rumb : rumb)
+				};
+			},
+
+			_isError(val, val1, rmb) {
+				if (rmb && rmb.np) {
+					if (rmb.np.length === 1 && rmb.rumb !== 0) {
+						return true;
+					} else if (rmb.rumb < 0 || rmb.rumb >= 90) {
+					// } else if (isNaN(val) || rmb.rumb < 0 || rmb.rumb >= 90) {
+						return true;
+					} else {
+						val = rmb.rumb;
+					}
+				}
+				return isNaN(val) || (val !== null && (val < 0 || val >= 360)) ? true : (val1 !== undefined && val1 <= 0 ? true : false);
+			},
+			fromClipboard(ev) {
+				const { snap, map } = this.get();
+				let cont = this.refs.sn0,
+					inputs = cont.getElementsByTagName('input'),
+					target = ev.target,
+					clipboardData = ev.clipboardData,
+					str = clipboardData.getData('text/plain'),
+					arr = str.indexOf(',') !== -1 ? L.gmxUtil.parseCoordinates(str) : this.parseCoordinate(str);
+				if (arr) {
+					if (!L.Util.isArray(arr)) {
+						arr = target === inputs[0] ? [arr, inputs[1].value] : [inputs[0].value, arr];
+					}
+					clipboardData.clearData();
+					
+					snap.latlng = this._getLatlng(L.latLng(arr[0] || 0, arr[1] || 0));
+					setTimeout(function() {
+						inputs[0].value = snap.latlng[0];
+						inputs[1].value = snap.latlng[1];
+					}, 200);
+					inputs[0].classList.remove('error');
+					inputs[1].classList.remove('error');
+					this.set({snap: snap});
+				} else {
+					inputs[0].classList.add('error');
+					inputs[1].classList.add('error');
+					this.refs.sn00.classList.add('error');
+				}
+			},
+			setPoint(ev) {
+				let node = ev.target,
+					key = ev.data,
+					_focus = null;
+
+				if (node.value === '') {
+					return;
+				}
+				const { snap, map } = this.get();
+				let str = node.options ? node.options[node.selectedIndex].value : node.value;
+				
+				let rmb = this._parseAngle(str),
+					val = rmb.angle,
+					name = node.name,
+					prnt = node.parentNode,
+					type = 'point',
+					data = snap.latlng,
+					error = true;
+
+				if (prnt.classList.contains('snap')) {
+					type = 'snap';
+					data = snap.snap || [[]];
+				} else if (prnt.classList.contains('ring')) {
+					type = 'ring';
+					data = snap.ring || [[]];
+				}
+// console.log('setPoint', type, val, node, prnt.name);
+				if (type === 'point') {
+					if (name === 'lng' || name === 'lat') {
+						val = Number(node.value);
+						if (val) {
+							if (name === 'lng' && val >= -180 && val <= 180) {
+								error = false;
+								// snap.latlng = [snap.latlng ? snap.latlng[0] : 0, val];
+								snap.latlng = this._getLatlng(L.latLng(snap.latlng ? snap.latlng[0] : 0, val));
+							} else if (name === 'lat' && val > -90 && val < 90) {
+								error = false;
+								snap.latlng = this._getLatlng(L.latLng(val, snap.latlng ? snap.latlng[1] : 0));
+								// snap.latlng = [val, snap.latlng ? snap.latlng[1] : 0];
+							}
+						} else if (val === 0) {
+							error = false;
+							let cont = this.refs.sn0,
+								inputs = cont.getElementsByTagName('input'),
+								center = map.getCenter();
+
+							snap.latlng = this._getLatlng(center);
+							// snap.latlng = [Number(center.lat.toFixed(6)), Number(center.lng.toFixed(6))];
+							inputs[0].value = snap.latlng[0];
+							inputs[1].value = snap.latlng[1];
+							
+							if (snap.snap && !snap.snap[0].length) {
+								snap.snap = [[90, DEFLEG, '90']];
+							}
+							if (snap.ring && !snap.ring[0].length) {
+								snap.ring = [[45, DEFLEG, '45']];
+							}
+							
+							this.set({snap: snap});
+							return;
+						}
+						if (!error) {
+							this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec - this.sbl_mer(snap.latlng[0], snap.latlng[1]);
+							// this.delta = snap.latlng[0] ? 1 / Math.cos(snap.latlng[0] * Math.PI / 180) : 1;
+							this.delta = 1;
+							this.reDrawing(snap, true);
+						}
+					}
+				} else if (type === 'snap' || type === 'ring') {
+					if (PATERNS.angle.test(name)) {
+						let arr = PATERNS.angle.exec(name);
+						if (arr.length) {
+							let it = data[arr[1]];
+							// error = !val || this._isError(val, it[1], rmb);
+							error = this._isError(val, undefined, rmb);
+							if (!error) {
+								it[0] = Number(val);
+								it[1] = it[1] || 200;
+								_focus = 0;
+							}
+							it[2] = str;
+						}
+					} else if (PATERNS.dist.test(name)) {
+						error = this._isError(null, val);
+						if (!error) {
+							let arr = PATERNS.dist.exec(name);
+							if (arr.length) {
+								let it = data[arr[1]];
+								it[1] = Number(val);
+								it[0] = it[0] || 0;
+								_focus = 1;
+							}
+						}
+					}
+					if (!error) {
+						if (type === 'snap') {
+							snap.snap = data;
+						} else {
+							snap.ring = data;
+							// this._focus = data.length === 1 && _focus !== null ? _focus : null;
+						}
+					}
+				}
+				
+				let delItem = prnt.getElementsByClassName('delItem')[0],
+					addNext = prnt.getElementsByClassName('addNext')[0];
+				if (error) {
+					node.classList.add('error');
+					if (delItem) { delItem.classList.add('disabled'); }
+					if (addNext) { addNext.classList.add('disabled'); }
+				} else {
+					node.classList.remove('error');
+					if (delItem) { delItem.classList.remove('disabled'); }
+					if (addNext) { addNext.classList.remove('disabled'); }
+					// this.reDrawing(snap);
+				}
+				this.set({ snap: snap });
+			},
+
+			setLatlngPoint(ev) {
+				const { snap } = this.get();
+				let node = ev.target,
+					res = L.Control.gmxLocation.Utils.parseCoordinates(node.value);
+
+				if (res) {
+					snap.latlng = res;
+					this.set({ snap: snap });
+				} else {
+					
+				}
+			},
+
+			delPoint(node) {
+				const { snap } = this.get();
+				let prnt = node.parentNode.parentNode,
+					inputs = prnt.getElementsByTagName('input'),
+					cmdSpans = prnt.getElementsByClassName('pop_ro_right_dotted')[0].children;
+
+				if (prnt.classList.contains('snap') && snap.snap && snap.snap.length) {
+				// if (prnt.classList.contains('snap') && snap.snap.length > 1) {
+					let arr = PATERNS.angle.exec(inputs[0].name),
+						nm = arr.length ? Number(arr[1]) : 0;
+					snap.snap.splice(nm, 1);
+					if (!snap.snap.length) {
+						snap.snap = [[]];
+						inputs[0].value = inputs[1].value = '';
+						cmdSpans[0].classList.add('disabled');
+						cmdSpans[1].classList.add('disabled');
+					}
+					this.set({ snap: snap });
+				} else if (prnt.classList.contains('ring') && snap.ring && snap.ring.length) {
+				// } else if (prnt.classList.contains('ring') && snap.ring.length > 1) {
+					let arr = PATERNS.angle.exec(inputs[0].name),
+						nm = arr.length ? Number(arr[1]) : 0;
+					snap.ring.splice(nm, 1);
+					if (!snap.ring.length) {
+						snap.ring = [[]];
+						inputs[0].value = inputs[1].value = '';
+						cmdSpans[0].classList.add('disabled');
+						cmdSpans[1].classList.add('disabled');
+					}
+					this.set({ snap: snap });
+				}
+			},
+
+			_getNum(str, reg) {
+				let arr = reg.exec(str);
+				return arr.length ? Number(arr[1]) : 0;
+			},
+			nextPoint(node, flag) {
+				const { snap } = this.get();
+				let prnt = flag ? node.parentNode : node.parentNode.parentNode,
+					cont = this.refs.sn0,
+					scrollBox = this.refs.scroll,
+					inputs = prnt.getElementsByTagName('input'),
+					firstChild = inputs[0],
+					rmb = this._parseAngle(firstChild.value),
+					leg = [90, DEFLEG];
+ // console.log('nextPoint', snap, scrollBox.scrollHeight, scrollBox.clientHeight, scrollBox.offsetHeight);
+				this._focusNode = node === inputs[0] ? inputs[1].name : null;
+				if (prnt.classList.contains('point')) {
+					snap.snap = snap.snap || [[]];
+					snap.snap.unshift(leg);
+					this.set({ snap: snap })
+				} else if (prnt.classList.contains('snap')) {
+					if (!this._isError(inputs[0].value, inputs[1].value, rmb)) {
+						let nm = this._getNum(inputs[0].name, PATERNS.angle);
+						snap.snap = snap.snap || [[Number(inputs[0].value), Number(inputs[1].value)]];
+						if (!this._focusNode) {
+							snap.snap.splice(nm + 1, 0, leg);
+							this._focusNode = 'snap' + (nm + 1) + '_a';
+						}
+						this.set({ snap: snap });
+					}
+				} else if (prnt.classList.contains('ring')) {
+					if (!this._isError(inputs[0].value, inputs[1].value, rmb)) {
+						// let arr = PATERNS.angle.exec(firstChild.name),
+							// nm = arr.length ? Number(arr[1]) : 0;
+						let nm = this._getNum(inputs[0].name, PATERNS.angle);
+						snap.ring = snap.ring || [[Number(inputs[0].value), Number(inputs[1].value)]];
+						this._focus = 0;
+						if (!this._focusNode) {
+							snap.ring.splice(nm + 1, 0, [DEFANGLE, DEFLEG]);
+							this._focusNode = 'ring' + (nm + 1) + '_a';
+						}
+						this.set({ snap: snap });
+					}
+				}
+			},
+
+			addRing(node) {
+				const { snap } = this.get();
+				snap.ring = snap.ring || [];
+				snap.ring.unshift([DEFANGLE, DEFLEG]);
+				this.set({ snap: snap });
+			},
+			createKvartal() {
+				EditorLib.createLayer(true);
+			},
+			setKvartal(node) {
+				const { map, quadrantValues, snap } = this.get();
+// console.log('setKvartal', node);
+				if (quadrantValues) {
+					if (this._drawingItems) {
+						for (let key in this._drawingItems) {
+							map.gmxDrawing.remove(this._drawingItems[key]);
+						}
+					}
+					this._drawingItems = null;
+					let kv = node.value,
+						cont = this.refs.sn0,
+						addNext = cont.getElementsByClassName('addNext')[0];
+					if (quadrantValues[kv]) {
+						let bbox = quadrantValues[kv].bbox,
+							latlng = bbox.getCenter().reverse(),
+							lat = cont.getElementsByClassName('lat')[0],
+							lng = cont.getElementsByClassName('lng')[0],
+							min = bbox.min,
+							max = bbox.max;
+						map.fitBounds([[min.y, min.x], [max.y, max.x]]);
+						
+						lat.value = latlng[0]; lat.classList.remove('error');
+						lng.value = latlng[1]; lng.classList.remove('error');
+	//					addNext.classList.remove('disabled');
+	// console.log('setKvartal', latlng);
+						snap.latlng = this._getLatlng(L.latLng(latlng[0], latlng[1]));
+						// snap.latlng = this._getLatlng(latlng);
+						// snap.latlng = latlng;
+						this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec - this.sbl_mer(snap.latlng[0], snap.latlng[1]);
+						// this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec;
+						//this.delta = snap.latlng[0] ? 1 / Math.cos(snap.latlng[0] * Math.PI / 180) : 1;
+						this.delta = 1;
+	// console.log('nextPoint', snap, prnt);
+						snap.snap = snap.snap || [[]];
+						if (snap.snap.length === 0) {
+							snap.snap.unshift([90, DEFLEG]);
+						}
+						this.set({ snap: snap, kvartal: kv });
+						this.chkInputs(true);
+					} else {
+						// addNext.classList.add('disabled');
+					}
+				}
+
+			},
+			_drawingItems: null,
+			_clearDrawingItems() {
+				const { geo, map } = this.get();
+				if (this._drawingItems) {
+					for (let key in this._drawingItems) {
+						map.gmxDrawing.remove(this._drawingItems[key]);
+					}
+				}
+				if (geo) { map.gmxDrawing.remove(geo); }
+				this._drawingItems = null;
+			},
+
+			cancelMe() {
+				this.toggleContextmenu(0);
+				this._clearDrawingItems();
+				this.set({cancel: true});
+// console.log('cancelMe', this);
+			},
+			addObjectAny(geo) {
+				const { layerID, kvartal, hashCols, prnt, map } = this.get();
+
+				let snap = '';
+				if (this._drawingItems.snap) {
+					let geo = this._drawingItems.snap.toGeoJSON().geometry,
+						coords = geo.coordinates;
+					if (coords.length > 1) {
+						if (coords.length !== 2 || coords[0][0] !== coords[1][0] || coords[0][1] !== coords[1][1]) {
+							snap = JSON.stringify(geo);
+						}
+					}
+				}
+// console.log('Requests.fields', Requests.fields)
+
+				$(
+					EditorLib.editObject(layerID, null, {
+						hashCols: hashCols,
+						dFields: JSON.parse(window.localStorage.getItem('gmxForest_Delanka')) || {},
+						// fields: fields,
+						snap: snap,
+						drawingObject: geo
+					})
+				).on ('close', e => {
+					this._clearDrawingItems();
+					map.gmxDrawing.remove(geo);
+					prnt.regetFeatures();
+					L.gmx.layersVersion.chkVersion(layerID);
+					let dFields = e.target.getAll();
+ // console.log('dFields', dFields, hashCols);
+					delete dFields.FRSTAT;
+					delete dFields.snap;
+					window.localStorage.setItem('gmxForest_Delanka', JSON.stringify(dFields));
+				});
+				this.set({cancel: true});
+			},
+
+			chkInputs(flag) {
+				// node = node || document.getElementsByClassName('main_pop_cont_2')[0];
+				let inputs = document.getElementsByClassName('main_pop_cont_2')[0].getElementsByTagName('input');
+				for (let i = 0, len = inputs.length; i < len; i++) {
+					let it = inputs[i];
+					if (flag && it.name === 'ring0_a') {
+						it.classList.add('error');
+					}
+					// console.log('chkInputs', it.classList.contains('error'), val, name)
+					if (it.classList.contains('error')) {
+						it.focus();
+						it.select();
+						return false;
+					}
+				}
+				return true;
+			},
+			// _namesHash: {
+				// reportType: 'Тип отчета',
+				// organizationName: 'Наименование организации',
+				// inn: 'ИНН',
+				// region: 'Субъект Российской Федерации',
+				// forestry: 'Лесничество',
+				// sectionForestry: 'Участковое Лесничество',
+				// quadrant: 'Квартал',
+				// dacha: 'Дача',
+				// stratum: 'Выделы',
+				// fellingForm: 'Форма рубки',
+				// fellingType: 'Тип рубки', // *
+				// recoveryEventType: 'Тип лесовосстановления',
+				// siteArea: 'Площадь',
+				// scale: 'Масштаб',
+				// site: 'Делянка'
+			// },
+
+			addObject(node) {
+				const { map, prnt, snap, layerID, hashCols, kvartal, meta, item, geo } = this.get();
+
+// console.log('Requests.fields', Requests.fields)
+				let properties = {
+					snap: JSON.stringify(this._drawingItems.snap.toGeoJSON().geometry),
+					FRSTAT: 0
+				};
+				let fields = [
+						{ name: 'FRSTAT', value: 0 },
+						{ name: 'snap', value: JSON.stringify(this._drawingItems.snap.toGeoJSON().geometry) }
+					],
+					inputs = this.refs.scroll.getElementsByTagName('input');
+					// ,
+					// selectNodes = this.refs.scroll.getElementsByTagName('select');
+
+				// inputs.concat(selectNodes);
+				for (let key in meta) {
+					if (key in hashCols) {
+						//fields.push({ name: key, value: meta[key].Value });
+						properties[key] = meta[key].Value || '';
+					}
+				}
+				for (let i = 0, len = inputs.length; i < len; i++) {
+					let it = inputs[i],
+						name = it.name,
+						val = it.options ? it.options[it.selectedIndex || 0].value : it.value;
+
+					if (val) {
+						properties[name] = val;
+						// properties[this._namesHash[name] || name] = val;
+						// fields.push({ name: this._namesHash[name] || name, value: val });
+					}
+				}
+				if (hashCols['Квартал'] || hashCols.kv || hashCols.kvartal) {
+					let kvKey = hashCols['Квартал'] ? 'Квартал' : (hashCols.kv ? 'kv' : 'kvartal');
+					// fields.push({ name: kvKey, value: kvartal });
+					properties[kvKey] = kvartal;
+				}
+				
+				let lastProps = Object.keys(properties).reduce((p, k) => {
+					if (Config.fieldsConf[k] && Config.fieldsConf[k].save && properties[k]) {
+						p[k] = properties[k];
+					}
+					return p;
+				}, {});
+				
+				Requests.saveState(lastProps, 'gmxForest_lastProps');
+// console.log('ssssssssss', latlngs) L.gmxUtil.geoJSONtoGeometry
+				Requests.modifyVectorObjects(layerID, [{
+					properties: properties,
+					geometry: L.gmxUtil.geoJSONtoGeometry(geo.toGeoJSON()),
+					action: 'insert'
+				}]).then((ev) => {
+console.log('insert VectorObjects', ev)
+					this._clearDrawingItems();
+					map.gmxDrawing.remove(geo);
+					// prnt.editSite();
+					prnt.regetFeatures();
+					L.gmx.layersVersion.chkVersion(layerID);
+				});
+				this.cancelMe();
+			},
+
+			nextStep() {
+				const { step, meta, map } = this.get();
+ console.log('nextStep', step, meta, this.refs);
+// this.chkInputs();
+				const isRing = this._drawingItems && this._drawingItems.ring;
+				if (step === 2) {
+					this.addObject();
+				} else if (this.chkInputs(!isRing)) {
+					let ring = this._drawingItems.ring.rings[0].ring,
+						latlngs = ring.getLayers()[0].getLatLngs();
+// console.log('ssssssssss', latlngs)
+					latlngs[latlngs.length - 1] = latlngs[0];
+
+					map.gmxDrawing.remove(this._drawingItems.ring);
+					let geo = map.gmxDrawing.add(L.polygon(latlngs), {title: 'Делянка'});
+
+					this.set({step: 2, geo: geo, _lastProps: Requests.getState('gmxForest_lastProps')});
+				}
+			},
+
+			reDrawing(snap, setView) {
+				const { map } = this.get();
+// console.log('reDrawing', snap);
+
+				this._clearDrawingItems();
+				if (snap) {
+					if (snap.latlng) {
+						this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec - this.sbl_mer(snap.latlng[0], snap.latlng[1]);
+						let cont = this.refs.sn0;
+						if (cont) {
+							let inputs = cont.getElementsByTagName('input');
+							inputs[0].classList.remove('error');
+							inputs[1].classList.remove('error');
+						}
+						// this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec;
+						// this.delta = snap.latlng[0] ? 1 / Math.cos(snap.latlng[0] * Math.PI / 180) : 1;
+						this.delta = 1;
+						let gmxDrawing = map.gmxDrawing,
+							latlng = new L.LatLng(snap.latlng[0], snap.latlng[1]),
+							p = latlng,
+							marker = L.marker(latlng, {draggable: true, title: 'Snap point'}).on('dragend', (it, ev) => {
+								// if (snap.snap && snap.snap.length) {
+									let cont = this.refs.sn0,
+										inputs = cont.getElementsByTagName('input'),
+										latlng = it.target.getLatLng();
+									snap.latlng = this._getLatlng(latlng);
+									// snap.latlng = [latlng.lat, latlng.lng];
+									this.set({snap: snap});
+								// }
+							}, this),
+							myObject = map.gmxDrawing.add(marker, {}),
+							out = {
+								marker: myObject
+							},
+							arr = [];
+
+						if (setView) { map.setView(latlng); }
+						if (snap.snap) {
+							arr = snap.snap.map((it) => {
+								// p = L.GeometryUtil.destination(p, 180 + it[0], it[1]);
+								let angle = it[0] || 0,
+									dist = it[1] || 0;
+								angle += this.declination ? this.declination : 0;
+								dist *= this.delta ? this.delta : 1;
+								p = L.GeometryUtil.destination(p, angle, dist);
+								return p;
+							});
+							// arr = arr.reverse();
+							arr.unshift(latlng);
+							latlng = p;
+							out.snap = map.gmxDrawing.add(L.polyline(arr), {pointStyle:{shape: 'circle'}, lineStyle:{color: '#ff0000'}} );
+							out.snap.on('editstop dragend rotateend', (it) => {
+								let geoJSON = it.object.toGeoJSON(),
+									coords = geoJSON.geometry.coordinates,
+									latlngs = coords.map((it) => L.latLng(it[1], it[0])),
+									arr = Requests.getAngleDist(latlngs[0], latlngs, this.declination, this.delta);
+								arr.shift();
+// console.log('latlng1', coords[0]);
+								snap.latlng = this._getLatlng(L.latLng(coords[0][1], coords[0][0]));
+								snap.snap = arr;
+								this.lastEdit = 'snap';
+								this.set({snap: snap});
+							}, this);
+						}
+						if (snap.ring) {
+							arr = snap.ring.map((it) => {
+								let angle = (it[0] || 0);
+								angle -= this.declination ? this.declination : 0;
+								p = L.GeometryUtil.destination(p, (it[0] || 0) + (this.declination ? this.declination : 0), it[1] || 0);
+								return p;
+							});
+							arr.unshift(latlng);
+							out.ring = map.gmxDrawing.add(L.polyline(arr), {pointStyle:{shape: ''}, lineStyle:{color: '#0000ff'}} );
+							out.ring.on('editstop dragend rotateend', (it) => {
+								let geoJSON = it.object.toGeoJSON(),
+									latlngs = geoJSON.geometry.coordinates.map((it) => L.latLng(it[1], it[0])),
+									arr = Requests.getAngleDist(latlngs[0], latlngs, this.declination, this.delta),
+									snapLen = snap.snap ? snap.snap.length : 0;
+								if (!snapLen) {
+									snap.latlng = this._getLatlng(latlngs[0]);
+								}
+								arr.shift();
+								snap.ring = arr;
+								this.lastEdit = 'ring';
+								this.set({snap: snap});
+							}, this);
+						}
+						if (this.lastEdit && out[this.lastEdit]) {
+							out[this.lastEdit].bringToFront();
+						}
+						this.lastEdit = '';
+						this._drawingItems = out;
+					}
+				}
+			},
+
+			toggleContextmenu(flag) {
+ // console.log('toggleContextmenu', flag);
+				let map = nsGmx.leafletMap,
+					mcm = map.contextmenu,
+					dcm = map.gmxDrawing.contextmenu;
+
+				if (!this._privazMenu) {
+					this._privazMenu = {callback: this.privaz.bind(this), text: 'Привязать'};
+				}
+				if (flag === 1) {
+					dcm.insertItem(this._privazMenu, 0, 'points');
+					this._getCenterMenu = mcm.insertItem({callback: this.getCenter.bind(this), text: 'Взять координату'}, 0);
+				} else {
+					dcm.removeItem(this._privazMenu, 'points');
+					if (this._getCenterMenu) {
+						mcm.removeItem(this._getCenterMenu);
+					}
+					this._clearDrawingItems();
+					this.set({cancel: true});
+				}
+			},
+			sbl_mer(lat, lon) {
+				let zone = Math.round(lon / 6) + 1,
+					l0 = zone * 6 - 3;
+				return (lon - l0) * Math.sin(lat);
+			},
+			setNodeField(node, setFlag) {
+				const { map, quadrantIds} = this.get();
+				this.set({quadrantValues: null, quadrantLayerId: null});
+				let val = node.options ? node.options[node.selectedIndex].value : node.value;
+				if (val) {
+					L.gmxUtil.loaderStatus(val);
+					Requests.loadQuadrantValues(val)
+					.then(json => {
+						this.set({quadrantValues: json, quadrantLayerId: val || null});
+						for (let i = 0, len = quadrantIds.length; i < len; i++) {
+							let pt = quadrantIds[i];
+							if (pt.id === val) {
+								map.fitBounds(pt.bounds);
+								if (!pt._layer._map) { map.addLayer(pt._layer); }
+								break;
+							}
+						}
+						L.gmxUtil.loaderStatus(val, true);
+					});
+				}
+			},
+			privaz(ev, feature) {
+				const { snap } = this.get();
+				let geoJson = feature.toGeoJSON(),
+					latlngs = L.geoJson(geoJson).getLayers()[0].getLatLngs();
+					
+				if (latlngs[0][0] instanceof L.LatLng) {
+					latlngs = latlngs[0];
+				} else {
+					var tt = 1;
+				}
+
+				snap.latlng = this._getLatlng(latlngs[0]);
+				
+				this.declination = Requests.geoMag(snap.latlng[0], snap.latlng[1], 0).dec - this.sbl_mer(latlngs[0].lat, latlngs[0].lng);
+				this.delta = 1;
+				latlngs.push(latlngs[0]);
+				
+				snap.snap = [[]];
+				let ring = Requests.getAngleDist(latlngs[0], latlngs, this.declination, this.delta);
+				ring.shift();
+				snap.ring = ring;
+				feature.remove();
+				this.set({snap: snap});
+			},
+			_getLatlng(latlng) {
+				return [Number(latlng.lat.toFixed(6)), Number(latlng.lng.toFixed(6))];
+			},
+			getCenter(ev) {
+ 				const { snap, map } = this.get();
+				snap.latlng = this._getLatlng(ev.latlng);
+				this.set({snap: snap});
+			}
+		},
+		onupdate({ changed, current, previous }) {
+			if (changed.cancel && current.cancel) {
+				this.toggleContextmenu(0);
+			}
+			if (changed.snap && this._focusNode) {
+				let arr = document.getElementsByName(this._focusNode);
+				if (arr && arr.length) {
+					arr[0].focus();
+					arr[0].select();
+				}
+				this._focusNode = undefined;
+			}
+		},
+		onstate({ changed, current, previous }) {
+			if (changed.step && current.step === 1) {
+				this.toggleContextmenu(current.step);
+			}
+
+ // console.log('snap onstate', this._lastProps, current);
+			if (changed.snap) {
+				let snap = current.snap,
+					quadrantValues = current.quadrantValues,
+					item = current.item,
+					hashCols = current.hashCols;
+				if (!snap.latlng && quadrantValues && item && hashCols && current.map) {
+					let out = {},
+						fitBounds = null,
+						kv = item[hashCols.kv || hashCols.kvartal];
+					if (quadrantValues[kv]) {
+						let bbox = quadrantValues[kv].bbox,
+							min = bbox.min,
+							max = bbox.max;
+						current.map.fitBounds([[min.y, min.x], [max.y, max.x]]);
+						out.latlng = bbox.getCenter();
+						this.declination = Requests.geoMag(out.latlng[0], out.latlng[1], 0).dec - this.sbl_mer(out.latlng[0], out.latlng[1]);
+						// this.delta = out.latlng[0] ? 1 / Math.cos(out.latlng[0] * Math.PI / 180) : 1;
+						this.delta = 1;
+						let p = new L.LatLng(out.latlng[1], out.latlng[0]),
+							center = p,
+							fp = null;
+						if (!snap.ring && item && hashCols) {
+							let geo = item[hashCols.geomixergeojson],
+								geoJSON = L.geoJson(L.gmxUtil.geometryToGeoJSON(geo)),
+								latlngs = geoJSON.getLayers()[0].getLatLngs()[0];
+							fp = latlngs[0];
+							latlngs.unshift(latlngs[0]);
+							let ring = Requests.getAngleDist(p, latlngs, this.declination, this.delta);
+							ring.shift();
+							ring.shift();
+							p = latlngs[latlngs.length - 1];
+							let bearing = L.GeometryUtil.bearing(p, fp);
+							bearing = Math.floor(bearing * 100) / 100;
+							ring.push([
+								bearing + (bearing < 0 ? 360 : 0),
+								L.gmxUtil.distVincenty(p.lng, p.lat, fp.lng, fp.lat)
+							]);
+							out.ring = ring;
+						}
+						if (!snap.snap) {
+							let bearing = L.GeometryUtil.bearing(fp, center);
+							bearing = Math.floor(bearing * 100) / 100;
+							out.snap = [[
+								bearing + (bearing < 0 ? 360 : 0),
+								L.gmxUtil.distVincenty(fp.lng, fp.lat, center.lng, center.lat)
+							]];
+						}
+						snap = out;
+						this.set({snap: out, kvartal: kv});
+						this.reDrawing(snap, true);
+						return;
+					}
+				// } else if (this._focusNode !== undefined) {
+					// console.log('sssssss', this._focusNode);
+					// this.set({snap: {
+						// snap: [[]],
+						// ring: [[]]
+					// }});
+				}
+				this.reDrawing(snap);
+			}
+		}
+	}
+</script>
+
+<div class="main_pop_cont_2">
+	<div class="pop_title">Добавление делянки</div>
+{#if step === 1}
+	<div class="scrollbar" ref:scroll>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_big">Шаг 1. Контур делянки</div>
+		</div>
+		
+		<div class="pop_ro_title_radio">
+			<div class="pop_ro_title_left"><label class="custom-control-label">Слой квартальной сети</label></div>
+		</div>
+		<div class="pop_ro_title">
+			<select on:change="setNodeField(this, true)" name="quadrantLayerId" ref:quadrantLayerId class="quadrantLayerId gmx-sidebar-select-large">
+				<option value=""></option>
+{#if quadrantIds}
+{#each quadrantIds as it}
+						<option value="{it.id}" selected="{it.id === quadrantLayerId}">{it.title}</option>
+{/each}
+{/if}
+			</select>
+			<span class="pop_upload" alt="pop_upload" on:click="createKvartal()" ></span>
+		</div>
+{#if listQuadrants}
+		<div class="pop_ro_title_radio">
+			<div class="pop_ro_title_left"><label class="custom-control-label" for="defaultUnchecked">Квартал</label></div>
+		</div>
+		<div class="pop_ro pop_ro_radio_input">
+			<input name="kvartal" value="{kvartal || ''}" on:input="setKvartal(this)" class="" list="kvartal" title="Указать квартал" />
+			<datalist id="kvartal">
+			{#each listQuadrants as it}
+				<option value={it} />
+			{/each}
+			</datalist>
+		</div>
+{/if}
+		<div class="pop_ro_title_radio">
+			<div class="pop_ro_title_left"><label class="custom-control-label" for="defaultUnchecked">Координаты опорной точки</label></div>
+		</div>
+		<div class="pop_ro pop_ro_radio_input point" ref:sn0>
+			<span class="leaflet-gmx-coordFormatChange" title="Сменить формат координат" on:click="coordFormatChange(this)"></span>
+			<input name="lat" on:input="setPoint(event)" on:paste="fromClipboard(event)" value="{latlng ? latlng[0] : ''}" class="inp_pop_mini lat error" placeholder="lat" type="number" pattern="{paterns.latlng}" min="-90" max="90" step="0.002" />
+			<input name="lng" on:input="setPoint(event)" on:paste="fromClipboard(event)" value="{latlng ? latlng[1] : ''}" class="inp_pop_mini lng error" placeholder="long" type="number" pattern="{paterns.latlng}" min="-180" max="180" step="0.002" />
+		</div>
+		<div class="pop_ro pop_ro_radio_input latlngPoint" ref:sn00>
+			<input name="latlng" on:input="setLatlngPoint(event)" disabled value="{latlngPoint ? latlngPoint : ''}" class="inp_pop_mini {latlngPoint ? '' : 'error'}" />
+		</div>
+		<div class="p_block snap">
+			<div class="pop_ro_title_left">Привязочный ход</div>
+
+		{#each snapArr as it, i}
+			<div class="pop_ro snap">
+				<div class="pop_ro_title_left">{i}-{i + 1}</div>
+				<input name="snap{i}_a" value="{it[2] || it[0] || 0}" on:keyup="onKeyUp(event)" on:input="setPoint(event)" class="inp_pop_mini_m" placeholder="Angle" />
+				-
+				<input name="snap{i}_d" value="{Math.round(it[1] || 0)}" on:keyup="onKeyUp(event)" on:input="setPoint(event)" class="inp_pop_mini_m" placeholder="Distance" type="number" min="0" step="1" size="6" />
+				<div class="pop_ro_right_dotted">
+					<span on:click="nextPoint(this)" class="add_thin_ic addNext" title="Добавить строку"></span>
+					<span on:click="delPoint(this)" class="dotted_ic delItem" title="Удалить строку"></span>
+				</div>
+			</div>
+		{/each}
+		</div>
+
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Контур делянки</div>
+		</div>
+
+		{#each ringArr || [[]] as it, i}
+		<div class="pop_ro ring ring{i}">
+			<div class="pop_ro_title_left">{i + (snapArr ? snapArr.length : 0)}-{i === ringArr.length - 1 ? (snapArr ? snapArr.length : 0) : (snapArr ? snapArr.length : 0) + i + 1}</div>
+			<input name="ring{i}_a" value="{it[2] || it[0] || 0}" on:keyup="onKeyUp(event)" on:input="setPoint(event)" class="inp_pop_mini_m" />
+			-
+			<input name="ring{i}_d" on:keyup="onKeyUp(event)" on:input="setPoint(event)" value="{Math.round(it[1] || 0)}" class="inp_pop_mini_m" placeholder="Distance" type="number" min="0" step="1" />
+			<div class="pop_ro_right_dotted">
+				<span on:click="nextPoint(this)" class="add_thin_ic addNext" title="Добавить строку"></span>
+				<span on:click="delPoint(this)" class="dotted_ic delItem" title="Удалить строку"></span>
+			</div>
+		</div>
+		{/each}
+	</div>
+	<div class="pop_bottom">
+		<div class="pop_bottom_left" on:click="cancelMe()">Отмена</div>
+		<div class="pop_bottom_right" on:click="nextStep()">Далее</div>
+	</div>
+{:else}
+	<div class="scrollbar" ref:scroll>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_big">Шаг 2. Информация</div>
+			<div class="info">Важно!
+				<div class="main_pop_cont_4_Imp">
+					<div class="main_pop_cont_4_Imp_text ">
+					   на основе этой информации Вы будете создавать отчет, поэтому мы бы рекомендовали заполнить ее сразу, в процессе добавления делянки
+					</div>
+				</div>
+			</div>
+		</div>
+
+{#each Object.keys(hashCols) as k}
+	{#if
+		(k !== 'geomixergeojson' &&  k !== 'gmx_id' &&  k !== 'FRSTAT' &&  k !== 'snap') &&
+		(
+			(reportType === 'ИЛ' && k !== 'reforest_t') ||
+			(reportType === 'ВЛ' && k !== 'form_rub' && k !== 'type_rub')
+		)
+	}
+
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">{isForestCols && fieldsConf[k] ? fieldsConf[k].title : k}</div>
+		</div>
+		<div class="pop_ro">
+		{#if isForestCols && k === 'report_t'}
+			<select on:change="set({reportType: this.options[this.selectedIndex].value})" name="{k}" ref:reportType class="reportType gmx-sidebar-select-large">
+				{#each Object.keys(fieldsConf[k].onValue) as kk}
+				<option value="{kk}">{fieldsConf[k].onValue[kk].title}</option>
+				{/each}
+			</select>
+		{:else}
+			<input name="{k}" class="inp_pop" value="{_lastProps[k] || ''}" placeholder="{isForestCols && fieldsConf[k] ? fieldsConf[k].title : _lastProps[k] || ''}" />
+		{/if}
+		</div>
+	{/if}
+{/each}
+
+		<!-- div class="pop_ro_title">
+			<div class="pop_ro_title_left">Участковое лестничество</div>
+		</div>
+		<div class="pop_ro">
+			<input name="sectionForestry" class="inp_pop" value="" placeholder="Участковое лестничество" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Дача/Урочище</div>
+		</div>
+		<div class="pop_ro">
+			<input name="dacha" class="inp_pop"  placeholder="Дача/Урочище" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Квартал</div>
+		</div>
+		<div class="pop_ro">
+			<input name="quadrant" class="inp_pop"  placeholder="Квартал" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Выдел(ы)</div>
+		</div>
+		<div class="pop_ro">
+			<input name="stratum" class="inp_pop"  placeholder="Выдел(ы)" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Делянка</div>
+		</div>
+		<div class="pop_ro">
+			<input name="site" class="inp_pop"  placeholder="Делянка" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Площадь</div>
+		</div>
+		<div class="pop_ro">
+			<input name="siteArea" class="inp_pop"  placeholder="Площадь" />
+		</div>
+	{#if isReqTypeReport}
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Тип лесовосстановительного мероприятия</div>
+		</div>
+		<div class="pop_ro">
+			<input name="recoveryEventType" class="inp_pop"  placeholder="" />
+		</div>
+	{:else}
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Форма рубки</div>
+		</div>
+		<div class="pop_ro">
+			<input name="fellingForm" class="inp_pop"  placeholder="сплошная/выборочная" />
+		</div>
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Тип рубки</div>
+		</div>
+		<div class="pop_ro">
+			<input name="fellingType" class="inp_pop"  placeholder="" />
+		</div>
+	{/if}
+		<div class="pop_ro_title">
+			<div class="pop_ro_title_left">Год</div>
+		</div>
+		<div class="pop_ro">
+			<input name="Год" class="inp_pop"  placeholder="" />
+		</div -->
+	</div>
+	<div class="pop_bottom">
+		<div class="pop_bottom_left" on:click="cancelMe()">Отмена</div>
+		<div class="pop_bottom_right" on:click="nextStep()">Создать</div>
+	</div>
+{/if}
+</div>
+
+<style>
+* {
+    font-family: IBM Plex Sans;
+}
+
+:global(.gmxControlPopup.leaflet-control .closeButton) {
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+}
+
+.pop_title {
+    position: relative;
+    top: 0px;
+    left: 0;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    color: #394B59;
+    font-family: IBM Plex Sans;
+    min-height: 30px;
+    border-bottom: 1px solid #D8E1E8;
+    padding-left: 17px;
+}
+
+label.custom-control-label {
+    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.pop_ro_title {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 13px 26px 5px 15px;
+    margin-top: 0;
+    bottom: 4px;
+    position: relative;
+    align-items: center;
+}
+
+.pop_ro {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 5px 26px 5px 15px;
+    margin-bottom: 6px;
+    align-items: center;
+}
+
+.pop_ro.snap {
+    align-items: center;
+}
+
+.pop_ro.ring.ring0 {
+    align-items: center;
+}
+
+.pop_bottom {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 40px;
+    border-top: 1px solid #D8E1E8;
+    align-items: center;
+    margin-top: 23px;
+}
+
+.pop_bottom_right {
+    font-style: normal;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    flex-direction: row;
+    width: 50%;
+    justify-content: center;
+    align-items: center;
+    color: #318CFE;
+    cursor: pointer;
+    font-family: IBM Plex Sans;
+    font-weight: 600;
+}
+
+.pop_bottom_left {
+    font-style: normal;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    color: #394B59;
+    flex-direction: row;
+    width: 50%;
+    justify-content: center;
+    align-items: center;
+    border-right: 1px solid #D8E1E8;
+    cursor: pointer;
+    font-family: IBM Plex Sans;
+    font-weight: 600;
+}
+
+
+
+
+
+
+
+
+
+.main_pop_cont_2 {
+    display: block;
+    width: 287px;
+    height: 460px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: left;
+}
+.main_pop_cont_2 div {
+    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.scrollbar {
+    height: 100vh;
+    width: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
+.pop_ro_title_big {
+    font-style: normal;
+    font-weight: bold;
+    font-size: 14px;
+    line-height: normal;
+    color: #394B59;
+    display: block;
+}
+.pop_ro_title_radio {
+    display: flex;
+    justify-content: flex-start;
+    min-height: 30px;
+    padding: 13px 26px 5px 15px;
+    margin-bottom: -12px;
+    margin-top: -5px;
+}
+.custom-control-input {
+    position: relative;
+    z-index: 1;
+    opacity: 1;
+    margin-right: 10px;
+    top: 2px;
+}
+.pop_ro_title_left {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #8A9BA8;
+    display: block;
+}
+
+.leaflet-gmx-coordFormatChange {
+    margin-left: 2px;
+    margin-right: 8px;
+    margin-top: 11px;
+    display: none;
+}
+
+input.inp_pop {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+input.inp_pop_mini {
+    width: 48%;
+    text-align: left;
+    /* background: transparent;*/
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+input.inp_pop_mini_m {
+    width: 60px;
+    text-align: left;
+/*    background: transparent;*/
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+.latlngPoint {
+	text-align: right;
+}
+.latlngPoint input {
+	width: 100%;
+	text-align: center;
+}
+
+.pop_ro_right_dotted span {
+    cursor: pointer;
+}
+.add_thin_ic {
+    content: url(./img/add_thin_ic.svg);
+}
+.dotted_ic {
+    content: url(./img/remove_thin_ic.svg);
+}
+.main_pop_cont_4_Imp {
+	position: absolute;
+    display: block;
+    /* background: #FFFFFF; */
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 218px;
+    height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: left;
+    padding: 15px;
+}
+.info {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    text-align: right;
+    text-decoration-line: underline;
+    cursor: pointer;
+    color: #318CFE;
+}
+.main_pop_cont_4_Imp_text {
+    font-family: IBM Plex Sans;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+    text-align: left;
+    line-height: 18px;
+    color: #10161A;
+    display: block;
+}
+.pop_ro_title .main_pop_cont_4_Imp {
+	display: none;
+}
+.pop_ro_title .info:hover .main_pop_cont_4_Imp {
+	display: block;
+}
+
+.error {
+	background-color: lightcoral;
+}
+.disabled {
+    display: none;
+}
+
+.pop_ro_title select {
+    width: 100%;
+	
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+	
+}
+
+input[name="kvartal"] {
+    width: 100%;
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+}
+ 
+input[name="kvartal"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    background: #FFF;
+}
+
+span.pop_upload {
+    content: url(./img/upload.svg);
+	cursor: pointer;
+    left: 10px;
+    position: relative;
+}
+.p_block .pop_ro_title_left {
+    padding: 13px 26px 5px 15px;
+}
+
+.gmx-sidebar-select-large {
+	box-sizing:border-box;
+	width:100%;
+	height:33px;
+	padding:0 8px;
+	border-radius:3px;
+	background: transparent;
+	border:1px solid #d7e1e7;
+	font-family:Arial;
+	font-size:13px;
+	font-weight:400;
+	color:#5b7284;
+}
+
+</style>

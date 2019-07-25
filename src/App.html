@@ -1,0 +1,217 @@
+<script>
+	import * as Requests from './Requests.js';
+
+	//const stateStorage = Requests.getState();
+
+	export default {
+		data() {
+			return {
+				showGrid: 1,
+				gmxMap: null,
+				quadrantIds: [],
+				layerIds: [],
+				layerID: '',
+				tab: 'sites'
+			}
+		},
+		components: {
+			Sites: './Sites.html',
+			Report: './Report.html'
+		},
+	
+		methods: {
+			viewItem(id, layerItems, hashCols) {
+				const { map } = this.get();
+
+				for (let i = 0, len = layerItems.length; i < len; i++) {
+					let it = layerItems[i];
+					if (id === it[hashCols.gmx_id]) {
+						let geo = it[hashCols.geomixergeojson],
+							bbox = L.gmxUtil.getGeometryBounds(geo),
+							latlngBbox = L.latLngBounds([[bbox.min.y, bbox.min.x], [bbox.max.y, bbox.max.x]]);
+						map.fitBounds(latlngBbox);
+						break;
+					}
+				}
+			},
+
+			clearLayer(ev) {
+				const { layerID, layerIds, quadrantIds} = this.get();
+				let ph = {},
+					delID = ev.layer.options.layerID;
+				if (delID === layerID) {
+					ph.layerID = '';
+				}
+				for (let i = 0, len = layerIds.length; i < len; i++) {
+					if (layerIds[i].id === delID) {
+						layerIds.splice(i, 1);
+						ph.layerIds = layerIds;
+						break;
+					}
+				}
+				for (let i = 0, len = quadrantIds.length; i < len; i++) {
+					if (quadrantIds[i].id === delID) {
+						quadrantIds.splice(i, 1);
+						ph.quadrantIds = quadrantIds;
+						break;
+					}
+				}
+ // console.log('clearLayer', ph, quadrantIds);
+				this.set(ph);
+			}
+		},
+		onstate({ changed, current, previous }) {
+			if (changed.gmxMap) {
+				if (!this._eventOn && current.gmxMap._events) {
+					this._eventOn = true;
+					current.gmxMap.on('layerremove', this.clearLayer.bind(this));
+				}
+// console.log('App onstate', changed, current);
+
+// addPopupHook(key, callback:function(properties, div, node, hooksCount))
+				// Requests.getLayersIds(current.meta, current.gmxMap).then(json => { this.set(json); });
+			}
+		}
+	}
+//	Report
+</script>
+
+<div class="forest-plugin-container">
+	<ul class="nav nav-tabs">
+		<li class="nav-item">
+			<a class="nav-link show {tab === 'sites' ? 'active' : '-'}" href="#tab1" on:click="set({tab: 'sites', layerID: ''})">Делянки</a>
+		</li>
+		<li class="nav-item">
+			<a class="nav-link {tab === 'reports' ? 'active' : '-'}" href="#tab2" data-toggle="tab" on:click="set({tab: 'reports', layerID: ''})">Отчеты</a>
+		</li>
+	</ul>
+
+{#if tab === 'reports'}
+	<Report bind:gmxMap bind:map bind:layerID bind:layerIds bind:quadrantIds bind:showGrid />
+{:else}
+	<Sites bind:gmxMap bind:map bind:layerID bind:layerIds bind:quadrantIds />
+{/if}
+</div>
+
+<style>
+.forest-plugin-container {
+    background: #FFFFFF;
+    border-right: 1px solid lightgray;
+}
+.forest-plugin-container a {
+	font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	font-size: 16px;
+	font-weight: 500;
+}
+
+.nav {
+	display: -webkit-box;
+	display: -webkit-flex;
+	display: -ms-flexbox;
+	display: flex;
+	padding-left: 0;
+	margin-bottom: 0;
+	list-style: none
+}
+
+.nav-link {
+	display: block;
+	padding: .5em 1em
+}
+
+.nav-link:focus,
+.nav-link:hover {
+	text-decoration: none
+}
+
+.nav-link.disabled {
+	color: #636c72;
+	cursor: not-allowed
+}
+
+.nav-tabs {
+	border-bottom: 1px solid #ddd
+}
+
+.nav-tabs .nav-item {
+	/*margin-bottom: -1px;*/
+	width: 50%;
+    font-weight: 500;
+    text-align: center;
+    background: #F3F7FA;
+    border-left: 1px solid lightgray;
+}
+
+.nav-tabs .nav-link {
+	/*border: 1px solid transparent;*/
+	/*border-top-right-radius: .25rem;*/
+	/*border-top-left-radius: .25rem*/
+}
+
+.nav-tabs .nav-link:focus,
+.nav-tabs .nav-link:hover {
+	/*border-color: #eceeef #eceeef #ddd*/
+}
+
+.nav-tabs .nav-link.disabled {
+	color: #636c72;
+	background-color: transparent;
+	border-color: transparent
+}
+
+.nav-tabs .nav-item.show .nav-link,
+.nav-tabs .nav-link.active {
+	color: #02A97A;
+	background-color: rgba(2, 169, 122, 0.1);
+	border-bottom: 4px solid #02A97A;
+}
+
+.nav-tabs .dropdown-menu {
+	margin-top: -1px;
+	border-top-right-radius: 0;
+	border-top-left-radius: 0
+}
+
+a.nav-link {
+    color: #394B59;
+	text-decoration: none;
+}
+
+
+ul.nav.nav-tabs li:first-child.nav-item a.nav-link:before {
+    content: url(./img/del_ic.svg);
+    width: 12px;
+    height: 10.5px;
+    display: inline-block;
+    z-index: 100;
+    margin-right: 5px;
+}
+
+ul.nav.nav-tabs li:first-child.nav-item a.nav-link.active:before {
+    content: url(./img/del_ic_act.svg);
+    width: 12px;
+    height: 10.5px;
+    display: inline-block;
+    z-index: 100;
+    margin-right: 5px;
+}
+
+ul.nav.nav-tabs li:last-child.nav-item a.nav-link:before {
+    content: url(./img/otch_ic.svg);
+    width: 12px;
+    height: 10.5px;
+    display: inline-block;
+    z-index: 100;
+    margin-right: 5px;
+}
+
+ul.nav.nav-tabs li:last-child.nav-item a.nav-link.active:before {
+    content: url(./img/otch_ic_act.svg);
+    width: 12px;
+    height: 10.5px;
+    display: inline-block;
+    z-index: 100;
+    margin-right: 5px;
+}
+
+</style>

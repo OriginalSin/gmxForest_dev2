@@ -1,0 +1,462 @@
+<script>
+	export default {
+		data() {
+			return {
+				getReverse: null,
+				standart: '',
+				ring: [],
+				tab: 2
+			}
+		},
+
+		computed: {
+			latlng: ({ geoJson }) => geoJson.coordinates[0][0]
+		},
+
+		methods: {
+			toggleTab(tab) {
+				if (tab === 1) {
+					this.nextPoint(ev.target, true);
+				}
+			},
+			reverse(tab) {
+				const {getReverse} = this.get();
+				this.set({ring: getReverse()});
+				// console.log('ring', ring, geoJson);
+			}
+		}
+	}
+</script>
+
+<div class="main_pop_cont_2">
+	<div class="pop_title edit"></div>
+	<div class="tabbable" id="tabs-440015">
+	   <ul class="nav nav-tabs">
+		  <li class="nav-item edit" on:click="set({tab: 2})">
+			 <a class="nav-link mi {tab === 2 ? 'active' : ''}" href="#tab2" data-toggle="tab" aria-expanded="false">Информация</a>
+		  </li>
+		  <li class="nav-item edit" on:click="set({tab: 1})">
+			 <a class="nav-link mi {tab === 1 ? 'active' : ''}" href="#tab1" data-toggle="tab" aria-expanded="true">Контур делянки </a>
+		  </li>
+	   </ul>
+	   <div class="tab-content">
+		  <div class="tab-pane active tab1 {tab === 2 ? 'disabled' : ''}" ref:tab1 aria-expanded="true">
+			 <div class="scrollbar scrolly">
+				<div class="pop_ro_title">
+				   <div class="pop_ro_title_left">Координаты привязочной точки</div>
+				</div>
+				<div class="pop_ro pop_ro_radio_input">
+				   <input class="inp_pop_mini" placeholder="lat" value="{latlng[1]}" disabled />
+				   <input class="inp_pop_mini" placeholder="long" value="{latlng[0]}" disabled />
+				</div>
+				<div class="pop_ro_title">
+				   <div class="pop_ro_title_left">Контур делянки</div>
+					<div class="gmx-geometry-select-container"><button on:click="reverse()" class="gmx-sidebar-button">(Поменять порядок обхода)</button></div>
+
+				</div>
+	{#if ring}
+		{#each ring as it, i}
+		<div class="pop_ro ring ring{i}">
+			<div class="pop_ro_title_left">{i + 0}-{i === ring.length - 1 ? 0 : i + 1}</div>
+			<input name="ring{i}_a" value="{it[0]}" class="inp_pop_mini_m" disabled />
+			-
+			<input name="ring{i}_d" value="{Math.round(it[1])}" class="inp_pop_mini_m" placeholder="Distance" type="number" min="0" step="1" disabled />
+		</div>
+		{/each}
+	{/if}
+
+			 </div>
+		  </div>
+		  <div class="tab-pane {tab === 1 ? 'disabled' : ''} tab2" ref:tab2 aria-expanded="false">
+			 <div class="scrollbar scrolly" id="style-4">
+				{@html standart}
+			 </div>
+		  </div>
+	   </div>
+	</div>
+</div>
+
+<style>
+
+.main_pop_cont_2 {
+    display: block;
+    background: #FFFFFF;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 287px;
+    height: 460px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: left;
+}
+.main_pop_cont_2 div {
+    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.main_pop_cont_2 div button {
+    cursor: pointer;
+}
+.scrollbar {
+    height: 340px;
+    width: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
+.pop_ro_title {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 13px 26px 5px 15px;
+    margin-top: -5px;
+}
+.pop_ro_title_big {
+    font-style: normal;
+    font-weight: bold;
+    font-size: 14px;
+    line-height: normal;
+    color: #394B59;
+    display: block;
+}
+.pop_ro_title_radio {
+    display: flex;
+    justify-content: flex-start;
+    min-height: 30px;
+    padding: 13px 26px 5px 15px;
+    margin-bottom: -12px;
+    margin-top: -5px;
+}
+.custom-control-input {
+    position: relative;
+    z-index: 1;
+    opacity: 1;
+    margin-right: 10px;
+    top: 2px;
+}
+.pop_ro_title_left {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #8A9BA8;
+    display: block;
+}
+.pop_ro.pop_ro_radio_input {
+    margin-left: 23px;
+}
+
+.pop_ro {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 5px 26px 5px 15px;
+}
+input.inp_pop {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+input.inp_pop_mini {
+    width: 48%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+input.inp_pop_mini_m {
+    width: 60px;
+    text-align: left;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+.pop_ro_right_dotted span {
+    cursor: pointer;
+}
+.add_thin_ic {
+    content: url(./img/add_thin_ic.svg);
+}
+.dotted_ic {
+    content: url(./img/remove_thin_ic.svg);
+}
+.pop_bottom {
+    font-style: normal;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 40px;
+    border-top: 1px solid #D8E1E8;
+    align-items: center;
+}
+.pop_bottom_left {
+    font-style: normal;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: normal;
+    display: flex;
+    color: #394B59;
+    flex-direction: row;
+    width: 50%;
+    justify-content: center;
+    align-items: center;
+    border-right: 1px solid #D8E1E8;
+    cursor: pointer;
+}
+.pop_bottom_right {
+    color: #394B59;
+    width: 50%;
+    justify-content: center;
+    color: #318CFE;
+    cursor: pointer;
+}
+.main_pop_cont_4_Imp {
+	position: absolute;
+    display: block;
+    background: #FFFFFF;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 218px;
+    height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: left;
+    padding: 15px;
+}
+.info {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    text-align: right;
+    text-decoration-line: underline;
+    cursor: pointer;
+    color: #318CFE;
+}
+.main_pop_cont_4_Imp_text {
+    font-family: IBM Plex Sans;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+    text-align: left;
+    line-height: 18px;
+    color: #10161A;
+    display: block;
+}
+.pop_ro_title .main_pop_cont_4_Imp {
+	display: none;
+}
+.pop_ro_title .info:hover .main_pop_cont_4_Imp {
+	display: block;
+}
+
+.error {
+	background-color: lightcoral;
+}
+.disabled {
+    display: none;
+}
+
+.nav-tabs {
+    border-bottom: 1px solid #ddd;
+}
+
+.nav {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: -ms-flexbox;
+    display: flex;
+    padding-left: 0;
+    margin-bottom: 0;
+    list-style: none;
+}
+
+.nav-tabs .nav-item {
+    width: 50%;
+    font-weight: 500;
+    text-align: center;
+    background: #F3F7FA;
+    border-left: 1px solid lightgray;
+}
+
+link.active {
+    color: #02A97A;
+    background-color: rgba(2, 169, 122, 0.1);
+    border-bottom: 4px solid #02A97A;
+}
+
+li.nav-item.edit {
+	font-size: 14px;
+}
+
+.nav-link {
+    display: block;
+    padding: .5em 1em;
+}
+
+a.nav-link.mi {
+    font-size: 11px;
+    line-height: 23px;
+}
+
+span.font_normal {
+    font-weight: 400;
+    color: #333;
+}
+
+:global(.gmxPopup .leaflet-popup-content-wrapper .leaflet-popup-content) {
+    overflow: hidden;
+    min-width: 290px;
+}
+
+.leaflet-popup-content {
+    line-height: 1.4;
+    margin: -2px -5px;
+}
+
+a.nav-link.mi {
+    font-size: 13px;
+    line-height: 26px;
+    text-decoration: none;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 600;
+    color: #394B59;
+}
+
+a.nav-link.mi.active {
+    color: #02A97A;
+    background-color: rgba(2, 169, 122, 0.1);
+    border-bottom: 4px solid #02A97A;
+}
+
+div.active {
+    background-color: transparent;
+    padding: 20px 0px;
+}
+
+.pop_ro_title {
+    display: flex;
+    justify-content: space-between;
+    min-height: 20px;
+    padding: 13px 26px 5px 15px;
+    margin-top: -5px;
+}
+
+.pop_ro {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 5px 26px 15px 15px;
+    align-items: center;
+    margin-top: 7px;
+}
+
+button.gmx-sidebar-button {
+    background: transparent;
+    border: 0 solid lightgray;
+    font-family: 'IBM Plex Sans', sans-serif;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 13px;
+    background: #02A97A;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #FFF;
+    width: 180px;
+    height: 30px;
+    background: #ED5641;
+    border-radius: 5px;
+    cursor: pointer;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    position: relative;
+    left: 3px;
+}
+
+input.inp_pop_mini_m {
+    width: 60px;
+    text-align: left;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    padding-left: 10px;
+    font-weight: bold;
+    font-size: 12px;
+    left: 3px;
+    position: relative;
+    line-height: normal;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: #394B59;
+}
+
+.pop_ro_title_left {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #8A9BA8;
+    min-width: 35px;
+    display: flex;
+    align-items: center;
+}
+
+div#style-4 {
+    padding: 20px 15px;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 11px 4px 0 5px;
+    border: none;
+    text-align: center;
+    width: 18px;
+    height: 14px;
+    font: 16px/14px Tahoma, Verdana, sans-serif;
+    color: #c3c3c3;
+    text-decoration: none;
+    font-weight: bold;
+    background: transparent;
+}
+</style>

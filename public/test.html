@@ -1,0 +1,82 @@
+<!-- USAGE:
+     Load this file in any web browser. Hit the "Go!" button. The Browser should start downloading the zipped archive.
+     Unzip the archive. The resulting JPEG files in there.
+-->
+<!--CREDENTIALS:
+      I'd like to thank 'zakharov.scanex.ru' and 'marunov@scanex.ru' for their invaluable contribution to this script
+-->
+
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Test Forest Report Standalone Service</title>
+    <script>
+		function run () {
+			var req = {"groupRequest" : [
+				{"quadrantLayerId":"","reportType":"об использовании лесов","organizationName":"ООО Большое ЛК",
+				 "inn":'1234567890',"region":"Тверская область","forestry":"Западнодвинское","sectionForestry":"Алексапольское",
+				 "quadrant":"95","stratum":"1,22","fellingForm":"","fellingType":"","recoveryEventType":"",
+				 "siteArea":"4.9","scale":"","site":"1","featureID":'25',
+				 "satLayers":[{"layerId":"636CBFF5155F4F299254EAF54079040C","type":"оптическая","system":"Sentinel-2",
+							   "resolution":"10 м","beginDate":1539820800,"endDate":1539820801}],
+				 "layerID":"0B8A43060C734E6FB28E9B063DEA31C6"},
+
+				{"quadrantLayerId":"","reportType":"об использовании лесов","organizationName":"ООО Большое ЛК",
+				 "inn":"1234567890","region":"Тверская область","forestry":"Западнодвинское", "sectionForestry":"Алексапольское",
+				 "quadrant":"97","stratum":"4,5","fellingForm":"","fellingType":"","recoveryEventType":"",
+				 "siteArea":"Площадь","scale":"","site":"1","featureID":28,
+				 "satLayers":[{"layerId":"636CBFF5155F4F299254EAF54079040C","type":"оптическая","system":"Sentinel-2",
+							   "resolution":"10 м","beginDate":1539820800,"endDate":1539820801}],
+				 "layerID":"0B8A43060C734E6FB28E9B063DEA31C6"},
+
+				{"quadrantLayerId":"","reportType":"об использовании лесов","organizationName":"ООО Маленькое ЛК",
+				 "inn":"1234567890","region":"Тверская область","forestry":"Западнодвинское", "sectionForestry":"Бельское",
+				 "quadrant":"58","stratum":"20,22","fellingForm":"","fellingType":"","recoveryEventType":"",
+				 "siteArea":"Площадь","scale":"","site":"1","featureID":41,
+				 "satLayers":[{"layerId":"636CBFF5155F4F299254EAF54079040C","type":"оптическая","system":"Sentinel-2",
+							   "resolution":"10 м","beginDate":1533772800,"endDate":1533772801}],
+				 "layerID":"0B8A43060C734E6FB28E9B063DEA31C6"},
+
+				{"quadrantLayerId":"","reportType":"об использовании лесов","organizationName":"ООО Маленькое ЛК",
+				 "inn":"1234567890","region":"Тверская область","forestry":"Западнодвинское", "sectionForestry":"Велесское",
+				 "quadrant":"66","stratum":"13","fellingForm":"","fellingType":"","recoveryEventType":"",
+				 "siteArea":"Площадь","scale":"","site":"1","featureID":57,
+				 "satLayers":[{"layerId":"636CBFF5155F4F299254EAF54079040C","type":"оптическая","system":"Sentinel-2",
+							   "resolution":"10 м","beginDate":1529020800,"endDate":1529020801}],
+				 "layerID":"0B8A43060C734E6FB28E9B063DEA31C6"}
+			]};
+			fetch ('http://lesfond.tk/rest/v1/getimages', {
+				method: 'POST',
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json'
+				},
+				mode: 'cors',
+				body: JSON.stringify(req)
+			})
+			.then (function (response) {
+			    return response.blob();
+			})
+			.then (function (bytes) {
+				var link = document.querySelector('#download')
+				if (!link) {
+				var link = document.createElement("iframe");
+				link.style.display = 'none';
+				link.id = 'download';
+				document.body.append(link)
+				}
+				link.src = window.URL.createObjectURL(bytes);
+			})
+			.catch (function (e) {
+				console.log(e);
+			});
+		}
+
+    </script>
+</head>
+
+<body>
+<button onclick="run()">Go!</button>
+</body>
+</html>

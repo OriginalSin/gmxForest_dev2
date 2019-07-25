@@ -1,0 +1,110 @@
+
+<script>
+export default {
+	data() {
+		return {
+			key: '',
+			prnt: null,
+			cols: []
+		};
+	},
+	computed: {
+		value: ({ key, changedParams }) => {
+			let it = changedParams ? changedParams[key] : {};
+			return it && it.value || '';
+		},
+		colName: ({ key, changedParams }) => {
+			let it = changedParams ? changedParams[key] : {};
+			return it && it.field || '';
+		},
+		isClicked: ({ key, changedParams }) => {
+			let it = changedParams ? changedParams[key] : {};
+			return it && it.field || false;
+		},
+		select: ({ key, params }) => { let it = params[key]; return it.select; },
+		list: ({ key, params }) => { let it = params[key]; return it.list; },
+		title: ({ key, params }) => { let it = params[key]; return it.title || it.value; }
+	},
+	methods: {
+		setSelection(val) {
+			const { key, changedParams, prnt } = this.get();
+ // console.log(`___ setSelection ______`, key, prnt, this.props.prnt);
+			changedParams[key] = {value: '', field: val};
+			// resetButton1();
+			this.set({changedParams: changedParams, recheckFlag: 1});
+		},
+		setValue(val, fieldFlag) {
+			const { key, changedParams, meta, params, prnt } = this.get();
+ // console.log(`___ setValue ______`, key, prnt);
+			// let it = params[key],
+				// meta[params[key].title]
+ 
+			changedParams[key] = {value: !fieldFlag ? val : '', field: fieldFlag ? val : ''};
+			this.set({changedParams: changedParams, recheckFlag: 1});
+			// resetButton1();
+		}
+	},
+	onstate({ changed, current, previous }) {
+// console.log('select onstate', changed, current);
+		if (changed.meta) {
+		// if (changed.meta && !current.changedParams[current.key] && current.meta[current.key]) {
+			let key = current.key,
+				val = current.params[key].fieldName;
+			if (val) {
+				this.setSelection(val);
+			}
+		}
+		if (changed.changedParams) {
+// console.log('changedParams', this.refs.submitButton)
+			//	if (this.refs.submitButton && this.refs.submitButton.textContent !== 'Создать отчеты') {
+		}
+
+	}
+};
+</script>
+
+<div class="gmx-sidebar-labeled-block">
+	<div class="gmx-sidebar-label">{title}</div>
+	<div>
+		<div>
+			{#if isClicked}
+				<select on:change="setSelection(event.target.options[event.target.selectedIndex].value)" ref:sel class="gmx-sidebar-select-with-addon">
+					{#each cols as it}
+						<option value="{it}" selected="{colName === it}">{it}</option>
+					{/each}
+				</select>
+				<button on:click="setValue('')" class="gmx-addon-button" title="выбрать из таблицы атрибутов"></button>
+			{:elseif select}
+				<select on:change="setValue(event.target.options[event.target.selectedIndex].value)" ref:sel1 class="gmx-sidebar-select-with-addon">
+					{#each select as it}
+						<option value="{it}" selected="{value === it}">{it}</option>
+					{/each}
+				</select>
+				<button on:click="setValue(cols[0], true)" class="gmx-addon-button" title="выбрать из таблицы атрибутов"></button>
+			{:else}
+				<input on:change="setValue(event.target.value)" type="text" ref:inp class="gmx-sidebar-input-with-addon" value="{value}" list="{list ? title : ''}">
+				{#if list}
+					<datalist id="{title}">
+					{#each list as it}
+						<option value="{it}" />
+					{/each}
+					</datalist>
+				{/if}
+				<button on:click="setValue(cols[0], true)" class="gmx-addon-button" title="выбрать из таблицы атрибутов"></button>
+			{/if}
+		</div>
+	</div>
+</div>
+
+<style>
+
+.gmx-sidebar-labeled-block {margin-top:4px;padding:0 10px;width:auto;display:grid;text-align:left}
+.gmx-sidebar-label {font-size:13px;line-height:31px;font-family:"Arial";padding-left:0px;color:#777f85}
+.gmx-sidebar-select ,.gmx-sidebar-select-with-addon {box-sizing:border-box;width:100px;height:33px;padding:0 8px;border-radius:3px;background-color:#f7fbff;border:1px solid #d7e1e7}
+.gmx-sidebar-select-with-addon {display:table-cell;float:left;width:85%;border-top-right-radius:0;border-bottom-right-radius:0;font-family:Arial;color:#5b7284;font-size:13px;font-weight:400}
+.gmx-sidebar-input ,.gmx-sidebar-input-with-addon {box-sizing:border-box;width:100px;height:33px;padding:0 8px;border-radius:3px;background:#FFF;border:1px solid rgba(27, 68, 97, 0.3);font-family:Arial;color:#5b7284;font-size:13px;font-weight:400}
+.gmx-sidebar-input-with-addon {display:table-cell;float:left;width:85%;border-top-right-radius:0;border-bottom-right-radius:0}
+.gmx-addon-button {padding:0 6px;box-sizing:border-box;width:15%;height:33px;display:table-cell;vertical-align:middle;background-color:#d7e1e7;border:none;border-radius:0 3px 3px 0;cursor:pointer;background:url(./list.png) no-repeat right #d8e1e8;background-position-x:50%;border-right:1px solid rgba(27, 68, 97, 0.3);border-top:1px solid rgba(27, 68, 97, 0.3);border-bottom:1px solid rgba(27, 68, 97, 0.3)}
+.gmx-addon-button :focus{outline:none}
+
+</style>

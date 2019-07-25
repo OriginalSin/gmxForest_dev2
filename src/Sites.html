@@ -1,0 +1,672 @@
+<script>
+	import * as Config from './Config.js';
+	import * as EditorLib from './EditorLib.js';
+	import * as Requests from './Requests.js';
+	import CreateSite from './CreateSite.html';
+	import Snapping from './Snapping.html';
+
+	export default {
+		data() {
+			return {
+				prnt: this,
+				error: '',
+				askMode: false,
+				layerItems: null,
+				hashCols: {},
+				checked: {},
+				quadrantLayerId: '',
+				quadrantIds: [],
+				quadrantValues: null,
+				item: null,
+				delAsk: 0,
+				delID: 0,
+				delAskStyle: '',
+				thisComp: null,
+				layerID: '',
+				layerIds: []
+			}
+		},
+		components: {
+			// Snapping: './Snapping.html',
+			Table: './Table.html'
+		},
+
+		computed: {
+			snap: ({ item, hashCols }) => {
+				let out = {};
+				if (item) {
+					let snap = item[hashCols.snap];
+					if (snap) {
+						try {
+							out = JSON.parse(snap);
+						} catch (e) {
+							return out;
+						}
+					}
+				}
+				return out;
+			},
+		},
+	
+		methods: {
+			colsToHash(arr) {
+				return arr.reduce((a, v, i) => { a[v] = i; return a; }, {});
+			},
+			setNodeField(node, setFlag) {
+				const {map, gmxMap} = this.get();
+				let val = node.options ? node.options[node.selectedIndex].value : node.value,
+					name = node.name;
+
+// console.log('setNodeField', node, setFlag, val, gmxMap);
+				if (val) {
+					this.regetFeatures(val);
+/*
+					let layer = gmxMap.layersByID[val],
+						meta = layer.getGmxProperties().MetaProperties;
+
+					Requests.loadFeatures(val)
+					.then(json => {
+						if (json.Status === 'ok') {
+							let res = json.Result,
+								cols = res.fields,
+								hashCols = this.colsToHash(cols),
+								out = {prnt: this, cols: cols, hashCols: hashCols, layerItems: res.values, layerID: val || '', quadrantLayerId: '', quadrantValues: null},
+								latlngBounds = L.latLngBounds();
+
+							res.values.map( it => {
+								let bb = L.gmxUtil.getGeometryBounds(it[it.length - 1]);
+								latlngBounds.extend([
+									[bb.min.y, bb.min.x],
+									[bb.max.y, bb.max.x]
+								]);
+							});
+							if (res.values.length) {
+								map.fitBounds(latlngBounds);
+							}
+							if (!layer._map) {
+								map.addLayer(layer);
+							}
+
+							// Requests.chkLayer(val);
+
+							if (meta.kvartal) {
+								let quadrantLayerId = meta.kvartal.Value;
+								Requests.loadQuadrantValues(quadrantLayerId)
+								.then(json => {
+									out.quadrantLayerId = quadrantLayerId;
+									out.quadrantValues = json;
+									this.set(out);
+								});
+							} else {
+								this.set(out);
+							}
+						}
+					});
+*/
+				} else {
+					this.set({layerID: ''});
+				}
+			},
+
+			regetFeatures(lid) {
+				let { layerID, map, gmxMap } = this.get();
+				if (lid) { layerID = lid; }
+				let layer = gmxMap.layersByID[layerID],
+					meta = layer.getGmxProperties().MetaProperties;
+				Requests.loadFeatures(layerID)
+				.then(json => {
+					if (json.Status === 'ok') {
+						let res = json.Result,
+							cols = res.fields,
+							attr = {prnt: this, isForestCols: true, cols: cols, hashCols: this.colsToHash(cols), layerItems: res.values, layerID: layerID};
+
+						for (let k in Config.fieldsConf) {
+							if (!(k in attr.hashCols)) {
+
+								attr.isForestCols = false;
+								break;
+							}
+						}
+// console.log('kkkkkkk', lid, attr);
+						if (lid) {
+							let latlngBounds = L.latLngBounds();
+							res.values.forEach( it => {
+								let bb = L.gmxUtil.getGeometryBounds(it[it.length - 1]);
+								latlngBounds.extend([
+									[bb.min.y, bb.min.x],
+									[bb.max.y, bb.max.x]
+								]);
+							});
+							if (res.values.length) {
+								map.fitBounds(latlngBounds);
+							}
+							if (!layer._map) {
+								map.addLayer(layer);
+							}
+
+							// Requests.chkLayer(val);
+
+							if (meta.kvartal) {
+								let quadrantLayerId = meta.kvartal.Value;
+								Requests.loadQuadrantValues(quadrantLayerId)
+								.then(json => {
+									attr.quadrantLayerId = quadrantLayerId;
+									attr.quadrantValues = json;
+									this.set(attr);
+								});
+							} else {
+								this.set(attr);
+							}
+						}
+
+						this.set(attr);
+					}
+				});
+			},
+
+			setField(key, data) {
+				const {changedParams} = this.get();
+				changedParams[key] = data;
+				this.set({changedParams: changedParams});
+			},
+
+			sendExcel(ev) {
+				Requests.sendExcel(ev.target).then(json => {
+					if (json) {
+						if (json.status === 'error') {
+							setTimeout(function() { this.set({error: ''}); }.bind(this), 5000);
+							this.set({error: json.text});
+						}
+						if (json.layerID) {
+							this.regetLayersIds(json.layerID);
+						}
+					}
+					
+// console.log('sendFile', json);
+				});
+				this.set({askMode: false});
+			},
+			sendFile(ev) {
+				Requests.sendVectorFile(ev.target, true).then(json => {
+					if (json) {
+						if (json.status === 'error') {
+							setTimeout(function() { this.set({error: ''}); }.bind(this), 5000);
+							this.set({error: json.text});
+						}
+						if (json.layerID) {
+							this.regetLayersIds(json.layerID);
+						}
+					}
+					
+// console.log('sendFile', json);
+				});
+				this.set({askMode: false});
+			},
+			addHand() {
+// console.log('addHand');
+				this.set({askMode: false});
+				this.createSite1();
+
+			},
+			
+			regetLayersIds(layerID) {
+// console.log('regetLayersIds', layerID);
+				const {gmxMap} = this.get();
+
+				let ph = Requests.getLayersIds(gmxMap);
+				ph.layerID = layerID;
+				this.set(ph);
+				this.setNodeField(this.refs.LayerSelect);
+/*
+				Requests.getLayersIds(gmxMap).then(json => {
+					json.layerID = layerID;
+					this.set(json);
+					this.setNodeField(this.refs.LayerSelect);
+				});
+*/
+			},
+
+			createSnap() {
+				const {map, quadrantLayerId, quadrantIds, snap, gmxMap, layerID, item, isForestCols, hashCols, quadrantValues} = this.get();
+				let gmxPopup = L.control.gmxPopup({maxHeight: 0, position: 'document', anchor: L.point(451, 430), closeOnMapClick: false}).openOn(map),
+					site = new Snapping({
+						target: gmxPopup._contentNode,
+						data: {
+							prnt: this,
+							snap: snap,
+							layerID: layerID,
+							item: item,
+							meta: gmxMap.layersByID[layerID].getGmxProperties().MetaProperties,
+							isForestCols: isForestCols,
+							hashCols: hashCols,
+							quadrantLayerId: quadrantLayerId,
+							quadrantIds: quadrantIds,
+							quadrantValues: quadrantValues,
+							gmxPopup: gmxPopup,
+							map: map
+						}
+					});
+				map.on('removeControl', site.toggleContextmenu.bind(site));
+				site.on('update', ({ changed, current, previous }) => {
+					if (changed.cancel && current.cancel) {
+// console.log('юююююю json', changed, current, site);
+						map.removeControl(gmxPopup);
+						// this.set({});
+					}
+					
+				});
+				map.gmxControlsManager.add(gmxPopup);
+				this.gmxPopup = gmxPopup;
+			},
+			createSite1() {
+				const {map, quadrantIds} = this.get();
+				let gmxPopup = L.control.gmxPopup({maxHeight: 0, position: 'document', anchor: L.point(451, 430), closeOnMapClick: false}).openOn(map),
+					site = new CreateSite({
+						target: gmxPopup._contentNode,
+						data: {
+							prnt: this,
+							quadrantIds: quadrantIds,
+							gmxPopup: gmxPopup,
+							map: map
+						}
+					});
+// console.log('createSite1 json', map);
+				map.gmxControlsManager.add(gmxPopup);
+				this.gmxPopup = gmxPopup;
+			},
+			deleteItem(id, ev) {
+				const { layerID, delAsk, delID } = this.get();
+				
+				if (delAsk && delID === id) {
+					Requests.modifyVectorObjects(layerID, [{"action":"delete","id": delID}]).then((argv) => {
+						this.regetFeatures();
+					});
+					this.set({delAsk: 0});
+				} else {
+					this.set({delAsk: 1, delID: id, delAskStyle: 'top: '+ (ev.clientY - 30) + 'px; left: 120px;'});
+				}
+console.log('deleteItem', delID);
+			},
+			editItem(id, snap, del) {
+				const { map, layerID, hashCols } = this.get();
+				let gmxDrawingSnap = null;
+				if (snap) {
+					try {
+						let json = JSON.parse(snap);
+						let coords = json.coordinates.map(it => it.reverse());
+						gmxDrawingSnap = map.gmxDrawing.add(L.polyline(coords), {pointStyle:{shape: 'circle'}, lineStyle:{color: '#ff0000'}} );
+						gmxDrawingSnap.on('editstop dragend rotateend', (it) => {
+							let geoJSON = it.object.toGeoJSON(),
+								tr = document.getElementsByClassName('edit-obj')[0].getElementsByTagName('tr'),
+								inp = tr[tr.length - 1].getElementsByTagName('input')[0];
+							inp.value = JSON.stringify(geoJSON.geometry);
+						});
+						// map.setView(coords[0]);
+						// map.fitBounds(gmxDrawingSnap.getBounds());
+
+					} catch (err) {
+						console.log('Без привязки', err);
+					}
+				}
+				$(
+					EditorLib.editObject(layerID, id, {
+						del: del,
+						hashCols: hashCols,
+						fields: [
+							{ name: 'FRSTAT', hide: true },
+							{ name: 'snap', hide: true }
+						]
+					})
+				).on ('close', e => {
+					var target = e.currentTarget,
+						geo = JSON.stringify(target.getGeometry()),
+						dgeo = JSON.stringify(target.getGeometryObj().toGeoJSON().geometry);
+
+					// flag = geo === dgeo;
+					map.gmxDrawing.remove(gmxDrawingSnap);
+					this.regetFeatures();
+				});
+				
+			},
+
+			setAskMode() {
+				if (this.gmxPopup && this.gmxPopup._map) {
+					this.gmxPopup._map.removeControl(this.gmxPopup);
+					this.gmxPopup = null;
+				}
+
+				this.set({askMode: true});
+			},
+
+			editSite() {
+				const { gmxMap, layerID, stateSave } = this.get();
+// console.log('editSite', layerID);
+				this.currentLayer = gmxMap.layersByID[layerID];
+				$(
+					EditorLib.editLayer(layerID)
+				);
+				
+				this.regetFeatures();
+			}
+		},
+		onstate({ changed, current, previous }) {
+ // console.log('Sites onstate', changed, current.layerIds);
+			if (changed.gmxMap) {
+				let ph = Requests.getLayersIds(current.gmxMap);
+				this.set(ph);
+			}
+		}
+	}
+</script>
+
+<div class="sites">
+	<div class="main_row">
+		<div class="main_right_tab_title_left">Группа делянок</div>
+		<div class="main_right_tab_title_right"><span class="{layerID ? '' : 'disabled'}" on:click="editSite()">Редактировать</span>&nbsp;&nbsp;&nbsp;&nbsp;<span on:click="setAskMode()">Создать</span></div>
+	</div>
+	<div class="main_row">
+		{#if layerIds.length}
+		<select on:change="setNodeField(this, true)" name="layerID" class="select" ref:LayerSelect>
+			<option value=""></option>
+				{#each layerIds as it}
+					<option value="{it.id}" selected="{layerID === it.id}" class="{it.bad ? 'red' : ''}">{it.title}</option>
+				{/each}
+		</select>
+		{/if}
+	</div>
+	<div class="separator"></div>
+	{#if error}
+	<div class="error">{error || ''}</div>
+	{/if}
+	{#if askMode}
+	<div class="main_pop_cont_1">
+		<div class="closeButton" on:click="set({askMode: false})">×</div>
+		<div class="main_pop_cont_1_top">
+			<label for="profileImage">Из файла Excel</label> 
+			<input type="file" id="profileImage" on:change="sendExcel(event)" style="display: none;">
+		</div>
+		<div class="main_pop_cont_1_top">
+			<label for="profileVector">Из векторного файла</label> 
+			<input type="file" id="profileVector" on:change="sendFile(event)" style="display: none;">
+		</div>
+		<div class="main_pop_cont_1_bottom" on:click="addHand()">Вводом углов и дистанций</div>
+	</div>
+	{/if}
+
+	{#if layerID}
+	<div class="main_row">
+		<div class="add_del" on:click="createSnap()">Добавить делянку</div>
+	</div>
+	{#if layerItems}
+	<div class="main_row">
+		<Table prnt="{prnt}" layerID="{layerID}" items="{layerItems}" hashCols="{hashCols}" editFlag=true bind:item bind:checked />
+	</div>
+	{#if delAsk}
+		<div class="main_pop_cont_del" style="{delAskStyle}" ref:delAsk>
+			<div class="main_pop_cont_del_row1">Вы уверены?</div>
+			<div class="main_pop_cont_del_row2">
+				<div class="but_del" on:click="deleteItem(delID)">Да, удалить</div>
+				<div class="but_cancel" on:click="set({delAsk: 0})">Отмена</div>
+			</div>
+		</div>
+	{/if}
+
+	{/if}
+	{/if}
+
+</div>
+
+<style>
+.main_pop_cont_del {
+    position: absolute;
+	display: block;
+    background: #FFFFFF;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 218px;
+    height: 85px;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: left;
+    padding: 15px;
+}
+.main_pop_cont_del_row1 {
+    font-family: IBM Plex Sans;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+    line-height: normal;
+    color: #10161A;
+}
+.main_pop_cont_del_row2 {
+    height: 30px;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+.but_del {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #FFF;
+    width: 100px;
+    height: 30px;
+    background: #ED5641;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: IBM Plex Sans;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+}
+.but_cancel {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #10161A;
+    width: 74px;
+    height: 30px;
+    background: #FFF;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    font-family: IBM Plex Sans;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+
+
+* {
+    font-family: IBM Plex Sans;
+}
+
+.main_right_tab_title_left {
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #8A9BA8;
+    font-family: IBM Plex Sans;
+}
+
+.main_right_tab_title_right span {
+	cursor: pointer;
+	text-decoration: none;
+    color: #318CFE;
+    transition: all 0.23s ease;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    font-family: IBM Plex Sans;
+}
+
+select.select {
+    background: transparent;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    border-radius: 5px;
+    height: 30px;
+    font-family: IBM Plex Sans;
+    color: #636c72;
+}
+
+option {
+    font-family: IBM Plex Sans;
+}
+
+
+
+
+
+
+
+
+.sites {
+    padding: 15px 24px 30px 12px;
+}
+.error {
+    padding: 10px;
+}
+
+.main_row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 30px;
+}
+.main_row select {
+    width: 100%;
+    min-height: 30px;
+}
+
+:global(.gmxControlPopup.leaflet-control .content-wrapper) {
+	margin: 10px 0 0 0;
+}
+
+:global(.gmxControlPopup.leaflet-control) {
+    top: -184px;
+    border-radius: 3px;
+	margin: 0;
+}
+.disabled {
+	display: none;
+}
+.separator {
+    border-bottom: 1px solid #D8E1E8;
+    margin-top: 23px;
+    margin-left: -12px;
+    margin-right: -25px;
+    margin-bottom: 13px;
+}
+
+.main_pop_cont_1 {
+    display: block;
+    background: #FFFFFF;
+    border: 1px solid #D8E1E8;
+    box-sizing: border-box;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    width: 221px;
+    height: 142px;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: left;
+    padding: 13px 10px;
+    position: absolute;
+    right: 26px;
+}
+.main_pop_cont_1 div {
+	font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: normal;
+    color: #394B59;
+    height: 37px;
+	cursor: pointer;
+}
+label {
+    cursor: pointer;
+}
+.main_pop_cont_1_top input {
+	top: -20px;
+    position: relative;
+}
+	
+.main_pop_cont_1 div:hover {
+	color: #318CFE;
+}
+
+.main_pop_cont_1 .closeButton {
+    position: absolute;
+    font: 16px/14px Tahoma, Verdana, sans-serif;
+    font-weight: bold;
+    color: #c3c3c3;
+    top: 4px;
+    right: 4px;
+    cursor: pointer;
+}
+.main_pop_cont_1 div {
+    color: #394B59;
+/*    transition: all 0.23s ease;*/
+}
+.main_pop_cont_1 div:before {
+    width: 22.5px;
+    margin-right: 7px;
+    position: relative;
+    top: 5px;
+}
+
+.main_pop_cont_1_bottom:before {
+    content: url(./img/angle_ic.svg);
+}
+.main_pop_cont_1_bottom:hover:before {
+    content: url(./img/angle_ic_act.svg);
+}
+.main_pop_cont_1_middle:before {
+    content: url(./img/vector_ic.svg);
+}
+.main_pop_cont_1_middle:hover:before {
+    content: url(./img/vector_ic_act.svg);
+}
+.main_pop_cont_1_top:before {
+    content: url(./img/excel_ic.svg);
+}
+.main_pop_cont_1_top:hover:before {
+	content: url(./img/excel_ic_act.svg);
+}
+
+.add_del {
+	cursor: pointer;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: normal;
+    color: #318CFE;
+    display: block;
+    cursor: pointer;
+}
+.add_del:before {
+    content: url(./img/add_ic.svg);
+    margin-right: 7px;
+    position: relative;
+    top: 3px;
+    transition: all 0.23s ease;
+}
+
+fieldset {
+    padding: 10px;
+    margin: 10px;
+}
+.red {
+	color: red;
+}
+</style>
