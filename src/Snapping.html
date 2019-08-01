@@ -54,7 +54,20 @@
 		},
 
 		methods: {
-		_lastProps: {},
+			_lastProps: {},
+			_useLastProps(props) {
+				let _lastProps = Requests.getState('gmxForest_lastProps') || {};
+				if (props) {
+					for (let k in props) {
+						if (Config.fieldsConf[k] && Config.fieldsConf[k].save && props[k]) {
+							if (!L.Util.isArray(_lastProps[k])) { _lastProps[k] = []; }
+							_lastProps[k].push(props[k]);
+						}
+					}
+					Requests.saveState(_lastProps, 'gmxForest_lastProps');
+				}
+				return _lastProps;
+			},
 			coordFormatChange(ev) {
 				const { snap, coordType } = this.get();
 				if (coordType) {
@@ -591,14 +604,15 @@ console.log('coordFormatChange', ev)
 					properties[kvKey] = kvartal;
 				}
 				
-				let lastProps = Object.keys(properties).reduce((p, k) => {
-					if (Config.fieldsConf[k] && Config.fieldsConf[k].save && properties[k]) {
-						p[k] = properties[k];
-					}
-					return p;
-				}, {});
+				this._useLastProps(properties);
+				// let lastProps = Object.keys(properties).reduce((p, k) => {
+					// if (Config.fieldsConf[k] && Config.fieldsConf[k].save && properties[k]) {
+						// p[k] = properties[k];
+					// }
+					// return p;
+				// }, {});
 				
-				Requests.saveState(lastProps, 'gmxForest_lastProps');
+				// Requests.saveState(lastProps, 'gmxForest_lastProps');
 // console.log('ssssssssss', latlngs) L.gmxUtil.geoJSONtoGeometry
 				Requests.modifyVectorObjects(layerID, [{
 					properties: properties,
@@ -631,7 +645,7 @@ console.log('insert VectorObjects', ev)
 					map.gmxDrawing.remove(this._drawingItems.ring);
 					let geo = map.gmxDrawing.add(L.polygon(latlngs), {title: 'Делянка'});
 
-					this.set({step: 2, geo: geo, _lastProps: Requests.getState('gmxForest_lastProps')});
+					this.set({step: 2, geo: geo, _lastProps: this._useLastProps()});
 				}
 			},
 
@@ -829,7 +843,7 @@ console.log('insert VectorObjects', ev)
 				this.toggleContextmenu(current.step);
 			}
 
- // console.log('snap onstate', this._lastProps, current);
+ console.log('snap onstate', current._lastProps, current);
 			if (changed.snap) {
 				let snap = current.snap,
 					quadrantValues = current.quadrantValues,
@@ -1012,7 +1026,14 @@ console.log('insert VectorObjects', ev)
 				{/each}
 			</select>
 		{:else}
-			<input name="{k}" class="inp_pop" value="{_lastProps[k] || ''}" placeholder="{isForestCols && fieldsConf[k] ? fieldsConf[k].title : _lastProps[k] || ''}" />
+			<input list="{k}_" id="{k}" name="{k}" class="inp_pop" placeholder="{isForestCols && fieldsConf[k] ? fieldsConf[k].title : _lastProps[k] || ''}" />
+			{#if _lastProps[k]}
+				<datalist id="{k}_">
+					{#each _lastProps[k] as pt}
+					<option value="{pt}" />
+					{/each}
+				</datalist>
+			{/if}
 		{/if}
 		</div>
 	{/if}
