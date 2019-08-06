@@ -327,6 +327,8 @@ const getState = key => {
 };
 
 const getReportType = (zn) => {
+	if (zn.indexOf('использован') > -1) { zn = 'ИЛ'; }
+	else if (zn.indexOf('восста') > -1) { zn = 'ВЛ'; }
 	const pt = Config.fieldsConf.report_t.onValue[zn] || zn;
 
 	return pt ? pt.value : zn;
@@ -368,7 +370,9 @@ const sendReport = (flag, numPoints, drawSnap, showGrid, pdf, checked, layerItem
 					}
 				}
 // console.log('ssssssssss', key, data[key]);
-				if (emptyFlag) { return null; }
+				if (emptyFlag) {
+					return null;
+				}
 			}
 			data.satLayers = satLayers;
 			groupRequest.push(data);
@@ -404,7 +408,8 @@ let reparseParams = (arr) => {
 					ph.reforestType = it[key];
 					break;
 				case 'siteArea':
-					ph.area = Number(it[key]);
+					ph.area = it[key];
+					// ph.area = Number(it[key]);
 					break;
 				case 'scale':
 					ph.scale = Number(it[key]) || 0;

@@ -762,6 +762,7 @@ console.log('insert VectorObjects', ev)
 					if (this._getCenterMenu) {
 						mcm.removeItem(this._getCenterMenu);
 					}
+					map.gmxDrawing.clear();
 					this._clearDrawingItems();
 					this.set({cancel: true});
 				}
